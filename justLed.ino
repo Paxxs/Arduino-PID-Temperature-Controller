@@ -1,0 +1,149 @@
+// cspell:words OLED datasheet Adafruit SWITCHCAPVCC
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include "logo.h"
+#include <Adafruit_SSD1306.h>
+
+#define OLED_REST -1
+#define SCREEN_WIDTH 128    // OLED display width, in pixels
+#define SCREEN_HEIGHT 64    // OLED display height, in pixels
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address;
+
+Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+#define INTERVAL_LED 2000
+// Arduino pin
+#define LED_PIN 2
+#define CLK_PIN 9  // MAX6675 SCK
+#define CS_PIN 8   // MAX6675 CS
+#define DATA_PIN 7 // MAX6675 SO
+
+// led time and state
+unsigned long time_led_1 = 0;
+int led_1_state = LOW;
+
+void setup()
+{
+  Serial.begin(9600);
+  delay(500);
+  pinMode(LED_PIN, OUTPUT);
+
+  if (!display0.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+  {
+    for (;;)
+    {
+      Serial.println(F("SSD1306 allocation failed"));
+      delay(5000); // Don't proceed, loop forever
+    }
+  }
+  display0.drawBitmap((display0.width() - logo_width) / 2,
+                      (display0.height() - logo_height) / 2,
+                      logo_data, logo_width, logo_height, 1);
+  delay(2000); // Pause for 2 seconds
+
+  testanimate(logo16_data, logo16_width, logo16_height);
+  // delay(500);
+}
+
+void loop()
+{
+  // put your main code here, to run repeatedly:
+  DelayRun(&time_led_1, INTERVAL_LED, []() -> void
+           {
+    led_1_state = led_1_state == LOW ? HIGH : LOW;
+    digitalWrite(LED_PIN, led_1_state); });
+}
+
+/**
+ * @brief 间隔运行某个函数
+ *
+ * @param time 计时器
+ * @param interval 间隔 ms
+ * @param callback 回调函数
+ */
+void DelayRun(unsigned long *time, const int interval, void (*callback)())
+{
+  if (millis() > *time + interval)
+  {
+    print_time(*time);
+    callback();
+    *time = millis();
+  }
+}
+
+void print_time(unsigned long time_millis)
+{
+  Serial.print("Time: ");
+  Serial.print(time_millis / 1000);
+  Serial.print("s - ");
+  display0.clearDisplay();
+
+  display0.setTextSize(1);              // Normal 1:1 pixel scale
+  display0.setTextColor(SSD1306_WHITE); // Draw white text
+  display0.setCursor(0, 0);             // Start at top-left corner
+  display0.print(F("Time: "));
+  display0.print(time_millis / 1000);
+  display0.print(F("s - "));
+
+  display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Draw 'inverse' text
+  display0.println("yang");
+
+  display0.setTextSize(2); // Draw 2X-scale text
+  display0.setTextColor(SSD1306_WHITE);
+  display0.print("Baby");
+  display0.println(F(" Yang"));
+
+  display0.display();
+}
+
+#define NUMFLAKES 10 // Number of snowflakes in the animation example
+#define XPOS 0       // Indexes into the 'icons' array in function below
+#define YPOS 1
+#define DELTAY 2
+
+void testanimate(const uint8_t *bitmap, uint8_t w, uint8_t h)
+{
+  int8_t f, icons[NUMFLAKES][3];
+
+  // Initialize 'snowflake' positions
+  for (f = 0; f < NUMFLAKES; f++)
+  {
+    icons[f][XPOS] = random(1 - logo16_width, display0.width());
+    icons[f][YPOS] = -logo16_height;
+    icons[f][DELTAY] = random(1, 6);
+    Serial.print(F("x: "));
+    Serial.print(icons[f][XPOS], DEC);
+    Serial.print(F(" y: "));
+    Serial.print(icons[f][YPOS], DEC);
+    Serial.print(F(" dy: "));
+    Serial.println(icons[f][DELTAY], DEC);
+  }
+
+  for (unsigned int a = 0; a < 25; a++)
+  {                          // Loop forever...
+    display0.clearDisplay(); // Clear the display buffer
+
+    // Draw each snowflake:
+    for (f = 0; f < NUMFLAKES; f++)
+    {
+      display0.drawBitmap(icons[f][XPOS], icons[f][YPOS], bitmap, w, h, SSD1306_WHITE);
+    }
+
+    display0.display(); // Show the display buffer on the screen
+    delay(200);         // Pause for 1/10 second
+
+    // Then update coordinates of each flake...
+    for (f = 0; f < NUMFLAKES; f++)
+    {
+      icons[f][YPOS] += icons[f][DELTAY];
+      // If snowflake is off the bottom of the screen...
+      if (icons[f][YPOS] >= display0.height())
+      {
+        // Reinitialize to a random position, just off the top
+        icons[f][XPOS] = random(1 - logo16_width, display0.width());
+        icons[f][YPOS] = -logo16_height;
+        icons[f][DELTAY] = random(1, 6);
+      }
+    }
+  }
+}
