@@ -29,6 +29,7 @@ MAX6675 g_k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
 #define BTN_DOWN_PIN 3
 #define BTN_MENU_PIN 4
 #define BTN_UP_PIN 5
+#define BTN_BACK_PIN 6
 
 // SSR
 #define SSR_PIN A0
@@ -41,13 +42,14 @@ unsigned long g_time_k_type = 0;
 volatile bool g_down_btn = false;
 volatile bool g_up_btn = false;
 volatile bool g_menu_btn = false;
-volatile bool g_back_btn = false; // 双击 back
+volatile bool g_back_btn = false;
 
 // btn 抖动计算
 #define debounce 250 // time to wait in milli secs
 unsigned long g_pre_time_down_btn;
 unsigned long g_pre_time_menu_btn;
 unsigned long g_pre_time_up_btn;
+unsigned long g_pre_time_back_btn;
 
 int led_1_state = LOW;
 float g_k_type_temp = 0;
@@ -65,6 +67,7 @@ void setup()
   pinMode(BTN_DOWN_PIN, INPUT_PULLUP);
   pinMode(BTN_MENU_PIN, INPUT_PULLUP);
   pinMode(BTN_UP_PIN, INPUT_PULLUP);
+
   // Bit2 = 1 -> "PCIE2" enabled (PIND)
   PCICR |= B00000100;
   PCMSK2 |= B00111000; // 3 4 5 中断
@@ -273,18 +276,15 @@ ISR(PCINT2_vect)
     g_down_btn = !g_down_btn;
     g_pre_time_down_btn = millis();
   }
-  unsigned long menu_time = millis() - g_pre_time_menu_btn;
-  if (digitalRead(BTN_MENU_PIN) == LOW && menu_time > debounce)
+  if (digitalRead(BTN_MENU_PIN) == LOW && millis() - g_pre_time_menu_btn > debounce)
   {
-    if (menu_time < 380)
-    {
-      g_back_btn = !g_back_btn;
-      g_menu_btn = false;
-    }
-
-    else
-      g_menu_btn = !g_menu_btn;
+    g_menu_btn = !g_menu_btn;
     g_pre_time_menu_btn = millis();
+  }
+  if (digitalRead(BTN_BACK_PIN) == LOW && millis() - g_pre_time_back_btn > debounce)
+  {
+    g_back_btn = !g_back_btn;
+    g_pre_time_back_btn = millis();
   }
   if (digitalRead(BTN_UP_PIN) == LOW && millis() - g_pre_time_up_btn > debounce)
   {
