@@ -23,21 +23,53 @@ Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
 #define CS_PIN 8   // MAX6675 CS
 #define DATA_PIN 7 // MAX6675 SO
 
-MAX6675 k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
+MAX6675 g_k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
+
+// push Button
+#define BTN_DOWN_PIN 3
+#define BTN_MENU_PIN 4
+#define BTN_UP_PIN 5
+
+// SSR
+#define SSR_PIN A0
 
 // led time and state
-unsigned long time_led = 0;
-unsigned long time_k_type = 0;
+unsigned long g_time_led = 0;
+unsigned long g_time_k_type = 0;
+
+// btn state
+volatile bool g_down_btn = false;
+volatile bool g_up_btn = false;
+volatile bool g_menu_btn = false;
+volatile bool g_back_btn = false; // 双击 back
+
+// btn 抖动计算
+#define debounce 250 // time to wait in milli secs
+unsigned long g_pre_time_down_btn;
+unsigned long g_pre_time_menu_btn;
+unsigned long g_pre_time_up_btn;
 
 int led_1_state = LOW;
-float k_type_temp = 0;
-bool k_type_err = true;
+float g_k_type_temp = 0;
+bool g_k_type_err = true;
 
 void setup()
 {
+  noInterrupts();
+
   Serial.begin(9600);
-  delay(500);
   pinMode(LED_PIN, OUTPUT);
+  pinMode(SSR_PIN, OUTPUT);
+  digitalWrite(SSR_PIN, LOW);
+
+  pinMode(BTN_DOWN_PIN, INPUT_PULLUP);
+  pinMode(BTN_MENU_PIN, INPUT_PULLUP);
+  pinMode(BTN_UP_PIN, INPUT_PULLUP);
+  // Bit2 = 1 -> "PCIE2" enabled (PIND)
+  PCICR |= B00000100;
+  PCMSK2 |= B00111000; // 3 4 5 中断
+
+  interrupts();
 
   if (!display0.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
   {
@@ -58,13 +90,13 @@ void setup()
 void loop()
 {
   // put your main code here, to run repeatedly:
-  DelayRun(&time_led, INTERVAL_LED, []() -> void
-           {led_1_state = led_1_state == LOW ? HIGH : LOW;
-    digitalWrite(LED_PIN, led_1_state); 
-    PrintTime(time_led); });
+  DelayRun(&g_time_led, INTERVAL_LED, []() -> void
+           { led_1_state = led_1_state == LOW ? HIGH : LOW;
+    digitalWrite(LED_PIN, led_1_state);
+    PrintTime(g_time_led); });
 
   // refresh temp
-  DelayRun(&time_k_type, INTERVAL_K_TYPE, &UpdateTemp);
+  DelayRun(&g_time_k_type, INTERVAL_K_TYPE, &UpdateTemp);
 
   // display
   DisplayInfo();
@@ -89,8 +121,8 @@ void DelayRun(unsigned long *time, const int interval, void (*callback)())
 
 void UpdateTemp()
 {
-  k_type_temp = k_thermocouple.readCelsius();
-  k_type_err = (k_type_temp == NAN);
+  g_k_type_temp = g_k_thermocouple.readCelsius();
+  g_k_type_err = (g_k_type_temp == NAN);
 }
 
 // 控制台输出文字
@@ -102,13 +134,19 @@ void PrintTime(unsigned long time_millis)
 
   Serial.print(F("Temp: "));
 
-  Serial.print(k_type_temp);
+  Serial.print(g_k_type_temp);
   Serial.print(F(" *C"));
   Serial.print(F(" k_type_err: "));
-  Serial.print(k_type_err);
+  Serial.print(g_k_type_err);
 
   Serial.print(F(" SRAM Left: "));
   Serial.println(GetFreeRam());
+
+  Serial.print(g_pre_time_down_btn);
+  Serial.print(F(" "));
+  Serial.print(g_pre_time_menu_btn);
+  Serial.print(F(" "));
+  Serial.println(g_pre_time_up_btn);
 }
 
 // 显示 logo
@@ -130,11 +168,11 @@ void DisplayInfo()
   display0.setTextColor(SSD1306_WHITE); // Draw white text
   display0.setCursor(0, 0);             // Start at top-left corner
   display0.print(F("LED: "));
-  display0.print(time_led / 1000);
+  display0.print(g_time_led / 1000);
   display0.print(F("s - Tp: "));
   // display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Draw 'inverse' text
 
-  display0.println(k_type_temp);
+  display0.println(g_k_type_temp);
 
   display0.setTextSize(2); // Draw 2X-scale text
   display0.setTextColor(SSD1306_WHITE);
@@ -143,15 +181,21 @@ void DisplayInfo()
   display0.setTextSize(1); // Draw 1X-scale text
   display0.setTextColor(SSD1306_WHITE);
   display0.print(F("Tp Refresh:"));
-  display0.println(time_k_type / 1000);
+  display0.println(g_time_k_type / 1000);
   display0.print(F("SRAM Left: "));
   display0.println(GetFreeRam());
-  display0.print(F("Tp2: "));
+  display0.print(F("Btn: "));
 
-  display0.println(k_type_temp - 3.0);
-
-  display0.print(F(" - "));
-  display0.println(k_type_temp);
+  noInterrupts();
+  display0.print(g_up_btn);
+  display0.print(g_menu_btn);
+  display0.println(g_down_btn);
+  if (g_back_btn)
+  {
+    display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+    display0.print("back!");
+  }
+  interrupts();
 
   display0.display();
 }
@@ -220,4 +264,31 @@ int GetFreeRam()
   return (int)&v - (__brkval == 0
                         ? (int)&__heap_start
                         : (int)__brkval);
+}
+
+ISR(PCINT2_vect)
+{
+  if (digitalRead(BTN_DOWN_PIN) == LOW && millis() - g_pre_time_down_btn > debounce)
+  {
+    g_down_btn = !g_down_btn;
+    g_pre_time_down_btn = millis();
+  }
+  unsigned long menu_time = millis() - g_pre_time_menu_btn;
+  if (digitalRead(BTN_MENU_PIN) == LOW && menu_time > debounce)
+  {
+    if (menu_time < 380)
+    {
+      g_back_btn = !g_back_btn;
+      g_menu_btn = false;
+    }
+
+    else
+      g_menu_btn = !g_menu_btn;
+    g_pre_time_menu_btn = millis();
+  }
+  if (digitalRead(BTN_UP_PIN) == LOW && millis() - g_pre_time_up_btn > debounce)
+  {
+    g_up_btn = !g_up_btn;
+    g_pre_time_up_btn = millis();
+  }
 }
