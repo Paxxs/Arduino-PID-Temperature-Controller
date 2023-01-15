@@ -162,43 +162,76 @@ void DisplayLogo()
   display0.display();
 }
 
-// 更新显示器
+// 主信息显示界面
 void DisplayInfo()
 {
+#define FONT_X1_W 6
+#define FONT_X1_H 8
+
   display0.clearDisplay();
 
+  display0.setCursor(FONT_X1_W * 3, 0); // 先空三个空格输出设定值
   display0.setTextSize(1);              // Normal 1:1 pixel scale
   display0.setTextColor(SSD1306_WHITE); // Draw white text
-  display0.setCursor(0, 0);             // Start at top-left corner
-  display0.print(F("LED: "));
-  display0.print(g_time_led / 1000);
-  display0.print(F("s - Tp: "));
-  // display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Draw 'inverse' text
+  display0.print(F("SetPoint: "));
+  display0.println(100.00);
+#define FONT_X1_GAP 2
+  display0.setCursor(0, FONT_X1_H * 1 + FONT_X1_GAP); // 换行加个间隙
+  display0.setTextSize(2);
+  display0.print(g_k_type_temp); // MAX: 000.00
+  display0.setTextSize(1);
+  display0.print(".C");
 
-  display0.println(g_k_type_temp);
+  // 绘制温度侧边
+#define FONT_X2_W 12
+#define FONT_X2_H 16
+  display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 1 + FONT_X1_GAP); // 保持 2 间隙
+  display0.print("PID");
 
-  display0.setTextSize(2); // Draw 2X-scale text
-  display0.setTextColor(SSD1306_WHITE);
-  display0.println(F("Baby Yang"));
+  display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 2 + FONT_X1_GAP); // 1x 换行
+  display0.print(255);
 
-  display0.setTextSize(1); // Draw 1X-scale text
-  display0.setTextColor(SSD1306_WHITE);
-  display0.print(F("Tp Refresh:"));
-  display0.println(g_time_k_type / 1000);
-  display0.print(F("SRAM Left: "));
-  display0.println(GetFreeRam());
-  display0.print(F("Btn: "));
+  // 绘制 PID 参数框
+  // x: 2       y: + 1x 换行
+  // w: 9个1x   h: 3个1x
+  display0.drawRect(2, FONT_X1_H * 3 + FONT_X1_GAP - 1, FONT_X1_W * 9 + FONT_X1_GAP, FONT_X1_H * 3 + FONT_X1_GAP, SSD1306_WHITE);
 
-  noInterrupts();
-  display0.print(g_up_btn);
-  display0.print(g_menu_btn);
-  display0.println(g_down_btn);
-  if (g_back_btn)
-  {
-    display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
-    display0.print("back!");
-  }
-  interrupts();
+  // 绘制 三个 PID 参数列表
+  display0.setCursor(4, FONT_X1_H * 3 + FONT_X1_GAP);
+  display0.print(F("Kp: "));
+  display0.print(12.0000);
+  display0.setCursor(4, FONT_X1_H * 4 + FONT_X1_GAP);
+  display0.print(F("Ki: "));
+  display0.print(1.20);
+  display0.setCursor(4, FONT_X1_H * 5 + FONT_X1_GAP);
+  display0.print(F("Kd: "));
+  display0.print(0.70);
+
+  // 绘制 PID 参数列表侧边系统运行时间
+  // 时间文本 x: 9个1x 加4个空格    y: 和 Ki 一行
+  // 时间数字 x: 9个1x 加3个空格    y: 和 Kd 一行
+  display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4 + FONT_X1_GAP);
+  display0.print(F("Timer"));
+  display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 5 + FONT_X1_GAP);
+  display0.print(g_time_k_type / 1000);
+  // display0.print(5097600);
+  display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+  display0.print(F("s"));
+
+  // 绘制 dock 栏
+  // x: 0           y: Kd 换行 + 间隔 3
+  // w: 屏幕大小     h: 1x字体大小 + gap
+  display0.fillRoundRect(0, FONT_X1_H * 6 + FONT_X1_GAP + 3, SCREEN_WIDTH, FONT_X1_H + FONT_X1_GAP, 2, SSD1306_WHITE);
+
+  // 绘制 dock 栏文本
+  // x: 2             y: Kd 换行 + 间隔 4
+  display0.setTextColor(SSD1306_BLACK);
+  display0.setCursor(2, FONT_X1_H * 6 + FONT_X1_GAP + 4);
+  display0.print(F("HOT")); // PID HOT COL
+  display0.print(F(" RAM:"));
+  display0.print(GetFreeRam());
+  display0.print(F(" HUM:"));
+  display0.print(15.23);
 
   display0.display();
 }
