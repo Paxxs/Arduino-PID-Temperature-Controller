@@ -3,8 +3,9 @@
 #include <Adafruit_GFX.h>
 #include "logo.h"
 #include <Adafruit_SSD1306.h>
+
 // k type thermocouple driver
-#include <GyverMAX6675.h>
+#include <max6675.h>
 
 #define OLED_REST -1
 #define SCREEN_WIDTH 128    // OLED display width, in pixels
@@ -15,17 +16,19 @@ Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
 
 #define INTERVAL_LED 2000
 #define INTERVAL_K_TYPE 1000
+
 // Arduino pin
 #define LED_PIN 2
 #define CLK_PIN 9  // MAX6675 SCK
 #define CS_PIN 8   // MAX6675 CS
 #define DATA_PIN 7 // MAX6675 SO
 
-GyverMAX6675<CLK_PIN, DATA_PIN, CS_PIN> k_type_sensor;
+MAX6675 k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
 
 // led time and state
 unsigned long time_led = 0;
 unsigned long time_k_type = 0;
+
 int led_1_state = LOW;
 float k_type_temp = 0;
 bool k_type_err = true;
@@ -45,14 +48,10 @@ void setup()
     }
   }
 
-  display0.clearDisplay();
-  display0.drawBitmap((display0.width() - logo_width) / 2,
-                      (display0.height() - logo_height) / 2,
-                      logo_data, logo_width, logo_height, 1);
-  display0.display();
-  delay(4000); // Pause for 2 seconds
+  DisplayLogo();
+  delay(2000); // Pause for 2 seconds
 
-  TestAnimate(logo16_data, logo16_width, logo16_height);
+  // TestAnimate(logo16_data, logo16_width, logo16_height);
   // delay(500);
 }
 
@@ -60,8 +59,7 @@ void loop()
 {
   // put your main code here, to run repeatedly:
   DelayRun(&time_led, INTERVAL_LED, []() -> void
-           {
-    led_1_state = led_1_state == LOW ? HIGH : LOW;
+           {led_1_state = led_1_state == LOW ? HIGH : LOW;
     digitalWrite(LED_PIN, led_1_state); 
     PrintTime(time_led); });
 
@@ -89,29 +87,38 @@ void DelayRun(unsigned long *time, const int interval, void (*callback)())
   }
 }
 
-/** 更新温度信息 */
 void UpdateTemp()
 {
-  if (k_type_err = k_type_sensor.readTemp()) // 读取温度
-    k_type_temp = k_type_sensor.getTemp();
-  // Serial.print(sens.getTempInt());   // 或 getTempInt - 整数（无浮点数
+  k_type_temp = k_thermocouple.readCelsius();
+  k_type_err = (k_type_temp == NAN);
 }
 
 // 控制台输出文字
 void PrintTime(unsigned long time_millis)
 {
-  Serial.print("Time: ");
+  Serial.print(F("Time: "));
   Serial.print(time_millis / 1000);
-  Serial.print("s - ");
+  Serial.print(F("s - "));
 
-  Serial.print("Temp: ");
-  if (k_type_err)
-  {
-    Serial.print(k_type_temp);
-    Serial.println(" *C");
-  }
-  else
-    Serial.println("Error");
+  Serial.print(F("Temp: "));
+
+  Serial.print(k_type_temp);
+  Serial.print(F(" *C"));
+  Serial.print(F(" k_type_err: "));
+  Serial.print(k_type_err);
+
+  Serial.print(F(" SRAM Left: "));
+  Serial.println(GetFreeRam());
+}
+
+// 显示 logo
+void DisplayLogo()
+{
+  display0.clearDisplay();
+  display0.drawBitmap((display0.width() - logo_width) / 2,
+                      (display0.height() - logo_height) / 2,
+                      logo_data, logo_width, logo_height, 1);
+  display0.display();
 }
 
 // 更新显示器
@@ -125,23 +132,26 @@ void DisplayInfo()
   display0.print(F("LED: "));
   display0.print(time_led / 1000);
   display0.print(F("s - Tp: "));
-  display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Draw 'inverse' text
-  if (k_type_err)                                      // 读取温度
-  {
-    display0.println(k_type_temp);
-  }
-  else
-    display0.println("Error");
+  // display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Draw 'inverse' text
+
+  display0.println(k_type_temp);
 
   display0.setTextSize(2); // Draw 2X-scale text
   display0.setTextColor(SSD1306_WHITE);
-  display0.print("Baby");
-  display0.println(F(" Yang"));
+  display0.println(F("Baby Yang"));
 
   display0.setTextSize(1); // Draw 1X-scale text
   display0.setTextColor(SSD1306_WHITE);
-  display0.print("Tp Refresh:");
+  display0.print(F("Tp Refresh:"));
   display0.println(time_k_type / 1000);
+  display0.print(F("SRAM Left: "));
+  display0.println(GetFreeRam());
+  display0.print(F("Tp2: "));
+
+  display0.println(k_type_temp - 3.0);
+
+  display0.print(F(" - "));
+  display0.println(k_type_temp);
 
   display0.display();
 }
@@ -196,4 +206,18 @@ void TestAnimate(const uint8_t *bitmap, uint8_t w, uint8_t h)
       }
     }
   }
+}
+
+/**
+ * @brief Get the Free Ram object
+ *
+ * @return int current Ram
+ */
+int GetFreeRam()
+{
+  extern int __heap_start, *__brkval;
+  int v;
+  return (int)&v - (__brkval == 0
+                        ? (int)&__heap_start
+                        : (int)__brkval);
 }
