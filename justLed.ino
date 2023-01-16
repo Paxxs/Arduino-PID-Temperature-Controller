@@ -6,6 +6,14 @@
 
 // k type thermocouple driver
 #include <max6675.h>
+#include "DHT.h"
+// Uncomment whatever type you're using!
+#define DHT_TYPE DHT11 // DHT 11
+// #define DHT_TYPE DHT22 // DHT 22  (AM2302), AM2321
+// #define DHT_TYPE DHT21   // DHT 21 (AM2301)
+
+// PID control
+#include <PID_v1.h>
 
 #define OLED_REST -1
 #define SCREEN_WIDTH 128    // OLED display width, in pixels
@@ -14,7 +22,7 @@
 
 Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-#define INTERVAL_LED 2000
+#define INTERVAL_LED 1000
 #define INTERVAL_K_TYPE 1000
 
 // Arduino pin
@@ -23,7 +31,10 @@ Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
 #define CS_PIN 8   // MAX6675 CS
 #define DATA_PIN 7 // MAX6675 SO
 
+#define DHT_PIN 10 // DHT22
+
 MAX6675 g_k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
+DHT dht(DHT_PIN, DHT_TYPE);
 
 // push Button
 #define BTN_DOWN_PIN 3
@@ -51,8 +62,17 @@ unsigned long g_pre_time_menu_btn;
 unsigned long g_pre_time_up_btn;
 unsigned long g_pre_time_back_btn;
 
+// PID
+double g_kp = 2;
+double g_ki = 5;
+double g_kd = 1;
+double g_pid_setpoint, g_pid_input, g_pid_output;
+PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_kp, g_ki, g_kd, DIRECT);
+
 int led_1_state = LOW;
-float g_k_type_temp = 0;
+// float g_k_type_temp = 0;  g_pid_input
+float g_dht_humidity = 0;
+bool g_dht_humidity_err = true;
 bool g_k_type_err = true;
 
 void setup()
@@ -67,6 +87,12 @@ void setup()
   pinMode(BTN_DOWN_PIN, INPUT_PULLUP);
   pinMode(BTN_MENU_PIN, INPUT_PULLUP);
   pinMode(BTN_UP_PIN, INPUT_PULLUP);
+  dht.begin();
+
+  g_pid_setpoint = 70;
+  myPID.SetOutputLimits(0, 255);
+  myPID.SetSampleTime(INTERVAL_K_TYPE + 50);
+  myPID.SetMode(AUTOMATIC);
 
   // Bit2 = 1 -> "PCIE2" enabled (PIND)
   PCICR |= B00000100;
@@ -84,7 +110,7 @@ void setup()
   }
 
   DisplayLogo();
-  delay(2000); // Pause for 2 seconds
+  delay(1000); // Pause for 2 seconds
 
   // TestAnimate(logo16_data, logo16_width, logo16_height);
   // delay(500);
@@ -100,6 +126,9 @@ void loop()
 
   // refresh temp
   DelayRun(&g_time_k_type, INTERVAL_K_TYPE, &UpdateTemp);
+
+  myPID.Compute();
+  analogWrite(SSR_PIN, g_pid_output);
 
   // display
   DisplayInfo();
@@ -124,26 +153,30 @@ void DelayRun(unsigned long *time, const int interval, void (*callback)())
 
 void UpdateTemp()
 {
-  g_k_type_temp = g_k_thermocouple.readCelsius();
-  g_k_type_err = (g_k_type_temp == NAN);
+  g_k_type_err = (NAN == g_k_thermocouple.readCelsius());
+  myPID.SetMode(g_k_type_err ? MANUAL : AUTOMATIC);
+
+  g_pid_input = g_k_thermocouple.readCelsius();
+  // g_pid_input = dht.readTemperature();
+
+  // 湿度
+  g_dht_humidity = dht.readHumidity();
+  g_dht_humidity_err = isnan(g_dht_humidity);
 }
 
 // 控制台输出文字
 void PrintTime(unsigned long time_millis)
 {
-  Serial.print(F("Time: "));
+  Serial.print(F("Time:"));
   Serial.print(time_millis / 1000);
-  Serial.print(F("s - "));
+  Serial.print(F("-"));
 
   Serial.print(F("Temp: "));
 
-  Serial.print(g_k_type_temp);
-  Serial.print(F(" *C"));
-  Serial.print(F(" k_type_err: "));
-  Serial.print(g_k_type_err);
-
-  Serial.print(F(" SRAM Left: "));
-  Serial.println(GetFreeRam());
+  Serial.print(g_pid_input);
+  Serial.print(F(""));
+  Serial.print(F("-k_type_err:"));
+  Serial.println(g_k_type_err ? F("ERROR") : F("NO"));
 
   Serial.print(g_pre_time_down_btn);
   Serial.print(F(" "));
@@ -174,11 +207,11 @@ void DisplayInfo()
   display0.setTextSize(1);              // Normal 1:1 pixel scale
   display0.setTextColor(SSD1306_WHITE); // Draw white text
   display0.print(F("SetPoint: "));
-  display0.println(100.00);
+  display0.println(g_pid_setpoint);
 #define FONT_X1_GAP 2
   display0.setCursor(0, FONT_X1_H * 1 + FONT_X1_GAP); // 换行加个间隙
   display0.setTextSize(2);
-  display0.print(g_k_type_temp); // MAX: 000.00
+  display0.print(g_pid_input); // MAX: 000.00
   display0.setTextSize(1);
   display0.print(".C");
 
@@ -189,7 +222,7 @@ void DisplayInfo()
   display0.print("PID");
 
   display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 2 + FONT_X1_GAP); // 1x 换行
-  display0.print(255);
+  display0.print((int)g_pid_output);
 
   // 绘制 PID 参数框
   // x: 2       y: + 1x 换行
@@ -199,13 +232,13 @@ void DisplayInfo()
   // 绘制 三个 PID 参数列表
   display0.setCursor(4, FONT_X1_H * 3 + FONT_X1_GAP);
   display0.print(F("Kp: "));
-  display0.print(12.0000);
+  display0.print(g_kp);
   display0.setCursor(4, FONT_X1_H * 4 + FONT_X1_GAP);
   display0.print(F("Ki: "));
-  display0.print(1.20);
+  display0.print(g_ki);
   display0.setCursor(4, FONT_X1_H * 5 + FONT_X1_GAP);
   display0.print(F("Kd: "));
-  display0.print(0.70);
+  display0.print(g_kd);
 
   // 绘制 PID 参数列表侧边系统运行时间
   // 时间文本 x: 9个1x 加4个空格    y: 和 Ki 一行
@@ -227,11 +260,18 @@ void DisplayInfo()
   // x: 2             y: Kd 换行 + 间隔 4
   display0.setTextColor(SSD1306_BLACK);
   display0.setCursor(2, FONT_X1_H * 6 + FONT_X1_GAP + 4);
-  display0.print(F("HOT")); // PID HOT COL
+  if (myPID.GetMode() == AUTOMATIC)
+    display0.print(F("PID")); // PID HOT OFF
+  else
+    display0.print(F("OFF")); // PID HOT OFF
+
   display0.print(F(" RAM:"));
   display0.print(GetFreeRam());
   display0.print(F(" HUM:"));
-  display0.print(15.23);
+  if (g_dht_humidity_err)
+    display0.print(F("ERROR"));
+  else
+    display0.print(g_dht_humidity);
 
   display0.display();
 }
