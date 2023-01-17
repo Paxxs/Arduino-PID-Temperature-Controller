@@ -75,6 +75,14 @@ float g_dht_humidity = 0;
 bool g_dht_humidity_err = true;
 bool g_k_type_err = true;
 
+enum DisplayState
+{
+  e_DisplayInfo,
+  e_DisplayMenu
+};
+
+DisplayState display_state = e_DisplayInfo;
+
 void setup()
 {
   noInterrupts();
@@ -130,6 +138,17 @@ void loop()
   myPID.Compute();
   analogWrite(SSR_PIN, g_pid_output);
 
+  switch (display_state)
+  {
+  case e_DisplayInfo:
+    DisplayInfo();
+    break;
+  case e_DisplayMenu:
+
+    break;
+  default:
+    break;
+  }
   // display
   DisplayInfo();
 }
