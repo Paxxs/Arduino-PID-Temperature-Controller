@@ -7,6 +7,8 @@
 // k type thermocouple driver
 #include <max6675.h>
 #include "DHT.h"
+
+// ############### DHT ###############
 // Uncomment whatever type you're using!
 #define DHT_TYPE DHT11 // DHT 11
 // #define DHT_TYPE DHT22 // DHT 22  (AM2302), AM2321
@@ -15,26 +17,28 @@
 // PID control
 #include <PID_v1.h>
 
-#define OLED_REST -1
+// Menu System
+// #include <MenuSystem.h>
+// #include "CustomRender.h"
+
+// ############### SSD1306 display ###############
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+// #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define OLED_RESET -1
 #define SCREEN_WIDTH 128    // OLED display width, in pixels
 #define SCREEN_HEIGHT 64    // OLED display height, in pixels
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address;
 
 Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-#define INTERVAL_LED 1000
-#define INTERVAL_K_TYPE 1000
-
 // Arduino pin
 #define LED_PIN 2
+
 #define CLK_PIN 9  // MAX6675 SCK
 #define CS_PIN 8   // MAX6675 CS
 #define DATA_PIN 7 // MAX6675 SO
 
 #define DHT_PIN 10 // DHT22
-
-MAX6675 g_k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
-DHT dht(DHT_PIN, DHT_TYPE);
 
 // push Button
 #define BTN_DOWN_PIN 3
@@ -42,12 +46,40 @@ DHT dht(DHT_PIN, DHT_TYPE);
 #define BTN_UP_PIN 5
 #define BTN_BACK_PIN 6
 
-// SSR
-#define SSR_PIN A0
+// SSR(PWM)
+#define SSR_PIN 11
 
-// led time and state
-unsigned long g_time_led = 0;
-unsigned long g_time_k_type = 0;
+// ############### 传感器 ###############
+MAX6675 g_k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
+DHT dht(DHT_PIN, DHT_TYPE);
+
+// ############### Delay Interval ###############
+// #define INTERVAL_LED 1000
+#define INTERVAL_K_TYPE 1000
+
+// unsigned long g_time_led = 0;
+unsigned long g_timer_k_type;
+
+// ############### 按钮抖动去除计算 ###############
+#define debounce 250 // time to wait in milli secs
+unsigned long g_pre_time_down_btn;
+unsigned long g_pre_time_menu_btn;
+unsigned long g_pre_time_up_btn;
+// unsigned long g_pre_time_back_btn;
+
+// ############### PID ###############
+double g_kp = 2;
+double g_ki = 5;
+double g_kd = 1;
+double g_pid_setpoint, g_pid_input, g_pid_output;
+PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_kp, g_ki, g_kd, DIRECT);
+
+// ############### 指示状态 ###############
+int led_1_state = LOW;
+// g_pid_input 温度
+float g_dht_humidity;
+bool g_dht_humidity_err = true;
+bool g_k_type_err = true;
 
 // btn state
 volatile bool g_down_btn = false;
@@ -55,26 +87,7 @@ volatile bool g_up_btn = false;
 volatile bool g_menu_btn = false;
 volatile bool g_back_btn = false;
 
-// btn 抖动计算
-#define debounce 250 // time to wait in milli secs
-unsigned long g_pre_time_down_btn;
-unsigned long g_pre_time_menu_btn;
-unsigned long g_pre_time_up_btn;
-unsigned long g_pre_time_back_btn;
-
-// PID
-double g_kp = 2;
-double g_ki = 5;
-double g_kd = 1;
-double g_pid_setpoint, g_pid_input, g_pid_output;
-PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_kp, g_ki, g_kd, DIRECT);
-
-int led_1_state = LOW;
-// float g_k_type_temp = 0;  g_pid_input
-float g_dht_humidity = 0;
-bool g_dht_humidity_err = true;
-bool g_k_type_err = true;
-
+// 显示页面
 enum DisplayState
 {
   e_DisplayInfo,
@@ -82,6 +95,26 @@ enum DisplayState
 };
 
 DisplayState display_state = e_DisplayInfo;
+
+// ############Menu#########
+// const uint16_t updateMenuInterval = 200;
+// CustomRender my_render(&display0, 4);
+// MenuSystem ms(my_render);
+
+// BackMenuItem back_main_screen("Home Screen", nullptr, &ms);
+
+// Menu pid_menu("PID Settings", nullptr);
+// BackMenuItem pid_back_item("Back", nullptr, &ms);
+// NumericMenuItem pid_kp_item("Kp", nullptr, 0, 0, 255);
+// NumericMenuItem pid_ki_item("Ki", nullptr, 0, 0, 255);
+// NumericMenuItem pid_kd_item("Kd", nullptr, 0, 0, 255);
+// NumericMenuItem pid_on_off_item("ON/OFF", nullptr, 0, 0, 1);
+
+// Menu simple_hot_menu("Just SoSo Settings");
+// BackMenuItem simple_hot_back_item("Back", nullptr, &ms);
+// NumericMenuItem simple_hot_setpoint_hot("Stop Temp", nullptr, 0, 20, 255);
+// NumericMenuItem simple_hot_setpoint_cold("Start Temp", nullptr, 0, 18, 255);
+// NumericMenuItem simple_hot__on_off_item("ON/OFF", nullptr, 0, 0, 1);
 
 void setup()
 {
@@ -119,21 +152,23 @@ void setup()
 
   DisplayLogo();
   delay(1000); // Pause for 2 seconds
-
-  // TestAnimate(logo16_data, logo16_width, logo16_height);
-  // delay(500);
+  // InitializeMenu();
 }
 
 void loop()
 {
   // put your main code here, to run repeatedly:
-  DelayRun(&g_time_led, INTERVAL_LED, []() -> void
-           { led_1_state = led_1_state == LOW ? HIGH : LOW;
-    digitalWrite(LED_PIN, led_1_state);
-    PrintTime(g_time_led); });
+  // DelayRun(&g_time_led, INTERVAL_LED, []() -> void
+  //          { led_1_state = led_1_state == LOW ? HIGH : LOW;
+  //   digitalWrite(LED_PIN, led_1_state);
+  //   PrintTime(g_time_led); });
 
   // refresh temp
-  DelayRun(&g_time_k_type, INTERVAL_K_TYPE, &UpdateTemp);
+  DelayRun(&g_timer_k_type, INTERVAL_K_TYPE, &UpdateTemp);
+
+  // DelayRun(&g_time_key, INTERVAL_KEY_DE, DealKeyPress);
+
+  DealKeyPress();
 
   myPID.Compute();
   analogWrite(SSR_PIN, g_pid_output);
@@ -144,7 +179,7 @@ void loop()
     DisplayInfo();
     break;
   case e_DisplayMenu:
-
+    // ms.display();
     break;
   default:
     break;
@@ -160,7 +195,7 @@ void loop()
  * @param interval 间隔 ms
  * @param callback 回调函数
  */
-void DelayRun(unsigned long *time, const int interval, void (*callback)())
+void DelayRun(unsigned long *time, uint32_t interval, void (*callback)())
 {
   if (millis() > *time + interval)
   {
@@ -168,6 +203,68 @@ void DelayRun(unsigned long *time, const int interval, void (*callback)())
     callback();
     *time = millis();
   }
+}
+
+// void InitializeMenu()
+// {
+//   ms.get_root_menu().add_menu(&pid_menu);
+//   pid_menu.add_item(&pid_back_item);
+//   pid_menu.add_item(&pid_kp_item);
+//   pid_menu.add_item(&pid_ki_item);
+//   pid_menu.add_item(&pid_kd_item);
+//   pid_menu.add_item(&pid_on_off_item);
+
+//   ms.get_root_menu().add_menu(&simple_hot_menu);
+//   simple_hot_menu.add_item(&simple_hot_back_item);
+//   simple_hot_menu.add_item(&simple_hot__on_off_item);
+//   simple_hot_menu.add_item(&simple_hot_setpoint_hot);
+//   simple_hot_menu.add_item(&simple_hot_setpoint_cold);
+
+//   ms.get_root_menu().add_item(&back_main_screen);
+// }
+
+// void UpdatePidTurns()
+// {
+//   g_ki = pid_ki_item.get_value();
+//   g_kp = pid_kp_item.get_value();
+//   g_kd = pid_kd_item.get_value();
+// }
+
+void DealKeyPress()
+{
+  if (BtnPressed(&g_menu_btn))
+  {
+    if (display_state != e_DisplayMenu)
+    {
+      display_state = e_DisplayMenu;
+      Serial.println(F("切换显示！"));
+    }
+    else
+      Serial.println(F("menu"));
+    // ms.select();
+  }
+  if (BtnPressed(&g_down_btn))
+  {
+    Serial.println(F("down"));
+    // ms.next();
+  }
+  if (BtnPressed(&g_up_btn))
+  {
+    Serial.println(F("up"));
+    // ms.prev();
+  }
+}
+
+bool BtnPressed(volatile bool *btn_state)
+{
+  if (*btn_state)
+  {
+    noInterrupts();
+    *btn_state = false;
+    interrupts();
+    return true;
+  }
+  return false;
 }
 
 void UpdateTemp()
@@ -181,6 +278,7 @@ void UpdateTemp()
   // 湿度
   g_dht_humidity = dht.readHumidity();
   g_dht_humidity_err = isnan(g_dht_humidity);
+  PrintTime(g_timer_k_type);
 }
 
 // 控制台输出文字
@@ -214,12 +312,15 @@ void DisplayLogo()
   display0.display();
 }
 
+#define FONT_X1_W 6
+#define FONT_X1_H 8
+#define FONT_X1_GAP 2
+#define FONT_X2_W 12
+#define FONT_X2_H 16
+
 // 主信息显示界面
 void DisplayInfo()
 {
-#define FONT_X1_W 6
-#define FONT_X1_H 8
-
   display0.clearDisplay();
 
   display0.setCursor(FONT_X1_W * 3, 0); // 先空三个空格输出设定值
@@ -227,18 +328,15 @@ void DisplayInfo()
   display0.setTextColor(SSD1306_WHITE); // Draw white text
   display0.print(F("SetPoint: "));
   display0.println(g_pid_setpoint);
-#define FONT_X1_GAP 2
   display0.setCursor(0, FONT_X1_H * 1 + FONT_X1_GAP); // 换行加个间隙
   display0.setTextSize(2);
   display0.print(g_pid_input); // MAX: 000.00
   display0.setTextSize(1);
-  display0.print(".C");
+  display0.print(F(".C"));
 
   // 绘制温度侧边
-#define FONT_X2_W 12
-#define FONT_X2_H 16
   display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 1 + FONT_X1_GAP); // 保持 2 间隙
-  display0.print("PID");
+  display0.print(F("PID"));
 
   display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 2 + FONT_X1_GAP); // 1x 换行
   display0.print((int)g_pid_output);
@@ -265,7 +363,7 @@ void DisplayInfo()
   display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4 + FONT_X1_GAP);
   display0.print(F("Timer"));
   display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 5 + FONT_X1_GAP);
-  display0.print(g_time_k_type / 1000);
+  display0.print(g_timer_k_type / 1000);
   // display0.print(5097600);
   display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
   display0.print(F("s"));
@@ -295,58 +393,6 @@ void DisplayInfo()
   display0.display();
 }
 
-#define NUMFLAKES 10 // Number of snowflakes in the animation example
-#define XPOS 0       // Indexes into the 'icons' array in function below
-#define YPOS 1
-#define DELTAY 2
-
-void TestAnimate(const uint8_t *bitmap, uint8_t w, uint8_t h)
-{
-  int8_t f, icons[NUMFLAKES][3];
-
-  // Initialize 'snowflake' positions
-  for (f = 0; f < NUMFLAKES; f++)
-  {
-    icons[f][XPOS] = random(1 - logo16_width, display0.width());
-    icons[f][YPOS] = -logo16_height;
-    icons[f][DELTAY] = random(1, 6);
-    Serial.print(F("x: "));
-    Serial.print(icons[f][XPOS], DEC);
-    Serial.print(F(" y: "));
-    Serial.print(icons[f][YPOS], DEC);
-    Serial.print(F(" dy: "));
-    Serial.println(icons[f][DELTAY], DEC);
-  }
-
-  for (unsigned int a = 0; a < 25; a++)
-  {                          // Loop forever...
-    display0.clearDisplay(); // Clear the display buffer
-
-    // Draw each snowflake:
-    for (f = 0; f < NUMFLAKES; f++)
-    {
-      display0.drawBitmap(icons[f][XPOS], icons[f][YPOS], bitmap, w, h, SSD1306_WHITE);
-    }
-
-    display0.display(); // Show the display buffer on the screen
-    delay(200);         // Pause for 1/10 second
-
-    // Then update coordinates of each flake...
-    for (f = 0; f < NUMFLAKES; f++)
-    {
-      icons[f][YPOS] += icons[f][DELTAY];
-      // If snowflake is off the bottom of the screen...
-      if (icons[f][YPOS] >= display0.height())
-      {
-        // Reinitialize to a random position, just off the top
-        icons[f][XPOS] = random(1 - logo16_width, display0.width());
-        icons[f][YPOS] = -logo16_height;
-        icons[f][DELTAY] = random(1, 6);
-      }
-    }
-  }
-}
-
 /**
  * @brief Get the Free Ram object
  *
@@ -373,11 +419,11 @@ ISR(PCINT2_vect)
     g_menu_btn = !g_menu_btn;
     g_pre_time_menu_btn = millis();
   }
-  if (digitalRead(BTN_BACK_PIN) == LOW && millis() - g_pre_time_back_btn > debounce)
-  {
-    g_back_btn = !g_back_btn;
-    g_pre_time_back_btn = millis();
-  }
+  // if (digitalRead(BTN_BACK_PIN) == LOW && millis() - g_pre_time_back_btn > debounce)
+  // {
+  //   g_back_btn = !g_back_btn;
+  //   g_pre_time_back_btn = millis();
+  // }
   if (digitalRead(BTN_UP_PIN) == LOW && millis() - g_pre_time_up_btn > debounce)
   {
     g_up_btn = !g_up_btn;

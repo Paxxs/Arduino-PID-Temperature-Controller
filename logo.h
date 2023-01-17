@@ -1,5 +1,6 @@
 #define SSD1306_NO_SPLASH 0  // nosplash
 
+/*
 #define logo16_width  16
 #define logo16_height 16
 
@@ -21,6 +22,7 @@ const uint8_t PROGMEM logo16_data[] = {
   0b00000000,0b00000000,
   0b00000000,0b00000000,
 };
+*/
 
 
 
