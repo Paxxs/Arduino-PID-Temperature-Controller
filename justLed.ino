@@ -1,8 +1,12 @@
-// cspell:words OLED datasheet Adafruit SWITCHCAPVCC
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include "logo.h"
-#include <Adafruit_SSD1306.h>
+// cspell:words OLED datasheet Adafruit SWITCHCAPVCC PCICR PCMSK
+
+// ############### Display ###############
+// #include <Wire.h>
+// #include <Adafruit_GFX.h>
+// #include "logo.h"
+// #include <Adafruit_SSD1306.h>
+#include <U8g2lib.h>
+#include "logo_xbm.h"
 
 // k type thermocouple driver
 #include <max6675.h>
@@ -29,7 +33,8 @@
 #define SCREEN_HEIGHT 64    // OLED display height, in pixels
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address;
 
-Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
+// Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT);
+U8G2_SSD1306_128X64_NONAME_2_HW_I2C g_display(U8G2_R0, OLED_RESET);
 
 // Arduino pin
 #define LED_PIN 2
@@ -118,7 +123,10 @@ DisplayState display_state = e_DisplayInfo;
 
 void setup()
 {
-  noInterrupts();
+  g_display.begin(); // always return 1(true)
+  DisplayLogo();
+
+  // noInterrupts();
 
   Serial.begin(9600);
   pinMode(LED_PIN, OUTPUT);
@@ -139,18 +147,17 @@ void setup()
   PCICR |= B00000100;
   PCMSK2 |= B00111000; // 3 4 5 中断
 
-  interrupts();
+  // interrupts();
 
-  if (!display0.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
-  {
-    for (;;)
-    {
-      Serial.println(F("SSD1306 allocation failed"));
-      delay(5000); // Don't proceed, loop forever
-    }
-  }
+  // if (!display0.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+  // {
+  //   for (;;)
+  //   {
+  //     Serial.println(F("SSD1306 allocation failed"));
+  //     delay(5000); // Don't proceed, loop forever
+  //   }
+  // }
 
-  DisplayLogo();
   delay(1000); // Pause for 2 seconds
   // InitializeMenu();
 }
@@ -185,7 +192,7 @@ void loop()
     break;
   }
   // display
-  DisplayInfo();
+  // DisplayInfo();
 }
 
 /**
@@ -294,6 +301,7 @@ void PrintTime(unsigned long time_millis)
   Serial.print(F(""));
   Serial.print(F("-k_type_err:"));
   Serial.println(g_k_type_err ? F("ERROR") : F("NO"));
+  Serial.println(GetFreeRam());
 
   Serial.print(g_pre_time_down_btn);
   Serial.print(F(" "));
@@ -305,11 +313,18 @@ void PrintTime(unsigned long time_millis)
 // 显示 logo
 void DisplayLogo()
 {
-  display0.clearDisplay();
-  display0.drawBitmap((display0.width() - logo_width) / 2,
-                      (display0.height() - logo_height) / 2,
-                      logo_data, logo_width, logo_height, 1);
-  display0.display();
+  // display0.clearDisplay();
+  // display0.drawBitmap((display0.width() - logo_width) / 2,
+  //                     (display0.height() - logo_height) / 2,
+  //                     logo_data, logo_width, logo_height, 1);
+  // display0.display();
+  g_display.firstPage();
+  do
+  {
+    // g_display.setDrawColor(1);
+    // g_display.setBitmapMode(1);
+    g_display.drawXBMP((SCREEN_WIDTH - project_logo_width) / 2, 0, project_logo_width, project_logo_height, project_logo_bits);
+  } while (g_display.nextPage());
 }
 
 #define FONT_X1_W 6
@@ -321,76 +336,145 @@ void DisplayLogo()
 // 主信息显示界面
 void DisplayInfo()
 {
-  display0.clearDisplay();
+  // cspell:words ncen profont
+  // display0.clearDisplay();
+  g_display.firstPage();
+  do
+  {
+    // #### SetPoint
+    // display0.setCursor(FONT_X1_W * 3, 0); // 先空三个空格输出设定值
+    // display0.setTextSize(1);              // Normal 1:1 pixel scale
+    // display0.setTextColor(SSD1306_WHITE); // Draw white text
+    // display0.print(F("SetPoint: "));
+    // display0.println(g_pid_setpoint);
+    g_display.setFont(u8g2_font_t0_11b_mr);
+    g_display.setFontPosTop(); // 顶部对齐
+    g_display.drawStr(FONT_X1_W * 3, 0, "SetPoint");
+    g_display.setFont(u8g2_font_t0_11_mr);
+    g_display.setCursor(FONT_X1_W * (3 + 9), 0);
+    g_display.print(g_pid_setpoint);
 
-  display0.setCursor(FONT_X1_W * 3, 0); // 先空三个空格输出设定值
-  display0.setTextSize(1);              // Normal 1:1 pixel scale
-  display0.setTextColor(SSD1306_WHITE); // Draw white text
-  display0.print(F("SetPoint: "));
-  display0.println(g_pid_setpoint);
-  display0.setCursor(0, FONT_X1_H * 1 + FONT_X1_GAP); // 换行加个间隙
-  display0.setTextSize(2);
-  display0.print(g_pid_input); // MAX: 000.00
-  display0.setTextSize(1);
-  display0.print(F(".C"));
+    // #### 当前温度
+    // display0.setCursor(0, FONT_X1_H * 1 + FONT_X1_GAP); // 换行加个间隙
+    // display0.setTextSize(2);
+    // display0.print(g_pid_input); // MAX: 000.00
+    // display0.setTextSize(1);
+    // display0.print(F(".C"));
+    g_display.setFont(u8g2_font_VCR_OSD_mn); // 只有数字 num 15Px
+    g_display.setCursor(0, FONT_X1_H + 1);
+    g_display.print(g_pid_input);
 
-  // 绘制温度侧边
-  display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 1 + FONT_X1_GAP); // 保持 2 间隙
-  display0.print(F("PID"));
+    g_display.setFont(u8g2_font_t0_11b_mr);
+    g_display.print(F(".C"));
 
-  display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 2 + FONT_X1_GAP); // 1x 换行
-  display0.print((int)g_pid_output);
+    // #### 绘制温度侧边
+    // display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 1 + FONT_X1_GAP); // 保持 2 间隙
+    // display0.print(F("PID"));
+    // display0.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 2 + FONT_X1_GAP); // 1x 换行
+    // display0.print((int)g_pid_output);
 
-  // 绘制 PID 参数框
-  // x: 2       y: + 1x 换行
-  // w: 9个1x   h: 3个1x
-  display0.drawRect(2, FONT_X1_H * 3 + FONT_X1_GAP - 1, FONT_X1_W * 9 + FONT_X1_GAP, FONT_X1_H * 3 + FONT_X1_GAP, SSD1306_WHITE);
+    g_display.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 1 + FONT_X1_GAP); // 保持 2 间隙
+    g_display.print(F("PID"));
+    g_display.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 2 + FONT_X1_GAP); // 1x 换行
+    g_display.setFont(u8g2_font_t0_11_mr);
+    g_display.print((int)g_pid_output);
 
-  // 绘制 三个 PID 参数列表
-  display0.setCursor(4, FONT_X1_H * 3 + FONT_X1_GAP);
-  display0.print(F("Kp: "));
-  display0.print(g_kp);
-  display0.setCursor(4, FONT_X1_H * 4 + FONT_X1_GAP);
-  display0.print(F("Ki: "));
-  display0.print(g_ki);
-  display0.setCursor(4, FONT_X1_H * 5 + FONT_X1_GAP);
-  display0.print(F("Kd: "));
-  display0.print(g_kd);
+    // #### 绘制 PID 参数框
+    // // x: 2       y: + 1x 换行
+    // // w: 9个1x   h: 3个1x
+    // display0.drawRect(2, FONT_X1_H * 3 + FONT_X1_GAP - 1, FONT_X1_W * 9 + FONT_X1_GAP, FONT_X1_H * 3 + FONT_X1_GAP, SSD1306_WHITE);
+    g_display.drawFrame(2, FONT_X1_H * 3 + FONT_X1_GAP - 1, FONT_X1_W * 9 + FONT_X1_GAP, FONT_X1_H * 3 + FONT_X1_GAP * 1);
 
-  // 绘制 PID 参数列表侧边系统运行时间
-  // 时间文本 x: 9个1x 加4个空格    y: 和 Ki 一行
-  // 时间数字 x: 9个1x 加3个空格    y: 和 Kd 一行
-  display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4 + FONT_X1_GAP);
-  display0.print(F("Timer"));
-  display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 5 + FONT_X1_GAP);
-  display0.print(g_timer_k_type / 1000);
-  // display0.print(5097600);
-  display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
-  display0.print(F("s"));
+    // #### 绘制 三个 PID 参数列表
+    // display0.setCursor(4, FONT_X1_H * 3 + FONT_X1_GAP);
+    // display0.print(F("Kp: "));
+    // display0.print(g_kp);
+    // display0.setCursor(4, FONT_X1_H * 4 + FONT_X1_GAP);
+    // display0.print(F("Ki: "));
+    // display0.print(g_ki);
+    // display0.setCursor(4, FONT_X1_H * 5 + FONT_X1_GAP);
+    // display0.print(F("Kd: "));
+    // display0.print(g_kd);
+    g_display.setCursor(4, FONT_X1_H * 3 + FONT_X1_GAP);
+    g_display.setFont(u8g2_font_5x7_mr); // 6px hight
+    g_display.print(F("Kp: "));
+    g_display.print(g_kp);
+    g_display.setCursor(4, FONT_X1_H * 4 + FONT_X1_GAP);
+    g_display.print(F("Ki: "));
+    g_display.print(g_ki);
+    g_display.setCursor(4, FONT_X1_H * 5 + FONT_X1_GAP);
+    g_display.print(F("Kd: "));
+    g_display.print(g_kd);
 
-  // 绘制 dock 栏
-  // x: 0           y: Kd 换行 + 间隔 3
-  // w: 屏幕大小     h: 1x字体大小 + gap
-  display0.fillRoundRect(0, FONT_X1_H * 6 + FONT_X1_GAP + 3, SCREEN_WIDTH, FONT_X1_H + FONT_X1_GAP, 2, SSD1306_WHITE);
+    // #### 绘制 PID 参数列表侧边系统运行时间
+    // 时间文本 x: 9个1x 加4个空格    y: 和 Ki 一行
+    // 时间数字 x: 9个1x 加3个空格    y: 和 Kd 一行
+    // display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4 + FONT_X1_GAP);
+    // display0.print(F("Timer"));
+    // display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 5 + FONT_X1_GAP);
+    // display0.print(g_timer_k_type / 1000);
+    // // display0.print(5097600);
+    // display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+    // display0.print(F("s"));
 
-  // 绘制 dock 栏文本
-  // x: 2             y: Kd 换行 + 间隔 4
-  display0.setTextColor(SSD1306_BLACK);
-  display0.setCursor(2, FONT_X1_H * 6 + FONT_X1_GAP + 4);
-  if (myPID.GetMode() == AUTOMATIC)
-    display0.print(F("PID")); // PID HOT OFF
-  else
-    display0.print(F("OFF")); // PID HOT OFF
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4);
+    g_display.setFont(u8g2_font_t0_11b_mr);
+    g_display.print(F("Timer"));
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 5 + FONT_X1_GAP);
+    g_display.setFont(u8g2_font_5x7_mr); // 6px hight
+    g_display.print(g_timer_k_type / 1000);
 
-  display0.print(F(" RAM:"));
-  display0.print(GetFreeRam());
-  display0.print(F(" HUM:"));
-  if (g_dht_humidity_err)
-    display0.print(F("ERROR"));
-  else
-    display0.print(g_dht_humidity);
+    // #### 绘制 dock 栏
+    // x: 0           y: Kd 换行 + 间隔 3
+    // w: 屏幕大小     h: 1x字体大小 + gap
+    // display0.fillRoundRect(0, FONT_X1_H * 6 + FONT_X1_GAP + 3, SCREEN_WIDTH, FONT_X1_H + FONT_X1_GAP, 2, SSD1306_WHITE);
+    g_display.drawRBox(0, FONT_X1_H * 6 + FONT_X1_GAP * 2 + 1, SCREEN_WIDTH, FONT_X1_H + FONT_X1_GAP, 2);
 
-  display0.display();
+    // #### 绘制 dock 栏文本
+    // x: 2             y: Kd 换行 + 间隔 4
+    // display0.setTextColor(SSD1306_BLACK);
+    // display0.setCursor(2, FONT_X1_H * 6 + FONT_X1_GAP + 4);
+    // if (myPID.GetMode() == AUTOMATIC)
+    //   display0.print(F("PID")); // PID HOT OFF
+    // else
+    //   display0.print(F("OFF")); // PID HOT OFF
+    g_display.setDrawColor(0); // 只绘制背景
+
+    g_display.setCursor(4, FONT_X1_H * 6 + FONT_X1_GAP * 2 + 1);
+    g_display.setFont(u8g2_font_t0_11b_mr);
+    if (myPID.GetMode() == AUTOMATIC)
+      g_display.print(F("PID")); // PID HOT OFF
+    else
+      g_display.print(F("OFF")); // PID HOT OFF
+
+    // #### 覆盖 PID状态 末尾凸出来的背景
+    // 在 RBox 底部绘制一个方块
+    g_display.drawBox(0, FONT_X1_H * 6 + FONT_X1_GAP * 2 + 1 + FONT_X1_H + FONT_X1_GAP, SCREEN_WIDTH / 4, SCREEN_HEIGHT - (FONT_X1_H * 6 + FONT_X1_GAP * 2 + 1 + FONT_X1_H + FONT_X1_GAP));
+
+    // display0.print(F(" RAM:"));
+    // display0.print(GetFreeRam());
+    // display0.print(F(" HUM:"));
+    // if (g_dht_humidity_err)
+    //   display0.print(F("ERROR"));
+    // else
+    //   display0.print(g_dht_humidity);
+
+    g_display.setCursor(FONT_X1_W * 5, FONT_X1_H * 6 + FONT_X1_GAP * 3);
+    // g_display.setFont(u8g2_font_t0_11_mr); // 8px
+    // g_display.setFont(u8g2_font_6x10_mr); //7px
+    g_display.setFont(u8g2_font_profont10_mr); // 7px
+    g_display.print(F(" RAM:"));
+    g_display.print(GetFreeRam());
+    g_display.print(F(" HUM:"));
+    if (g_dht_humidity_err)
+      g_display.print(F("ERROR"));
+    else
+      g_display.print(g_dht_humidity);
+
+    g_display.setDrawColor(1); // 重置绘制模式，绘制前景不背景
+  } while (g_display.nextPage());
+
+  // display0.display();
 }
 
 /**
