@@ -22,8 +22,8 @@
 #include <PID_v1.h>
 
 // Menu System
-// #include <MenuSystem.h>
-// #include "CustomRender.h"
+#include <MenuSystem.h>
+#include "CustomRender.h"
 
 // ############### SSD1306 display ###############
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
@@ -104,23 +104,42 @@ DisplayState display_state = e_DisplayInfo;
 
 // ############Menu#########
 // const uint16_t updateMenuInterval = 200;
-// CustomRender my_render(&display0, 4);
-// MenuSystem ms(my_render);
 
-// BackMenuItem back_main_screen("Home Screen", nullptr, &ms);
+const char menu_main[] PROGMEM = "Back Home";
+const char menu_back[] PROGMEM = "Back";
 
-// Menu pid_menu("PID Settings", nullptr);
-// BackMenuItem pid_back_item("Back", nullptr, &ms);
-// NumericMenuItem pid_kp_item("Kp", nullptr, 0, 0, 255);
-// NumericMenuItem pid_ki_item("Ki", nullptr, 0, 0, 255);
-// NumericMenuItem pid_kd_item("Kd", nullptr, 0, 0, 255);
-// NumericMenuItem pid_on_off_item("ON/OFF", nullptr, 0, 0, 1);
+const char menu_pid[] PROGMEM = "PID Editor";
+const char menu_pid_kp[] PROGMEM = "Kp";
+const char menu_pid_ki[] PROGMEM = "Ki";
+const char menu_pid_kd[] PROGMEM = "Kd";
+const char menu_pid_of_off[] PROGMEM = "ON/OFF";
 
-// Menu simple_hot_menu("Just SoSo Settings");
-// BackMenuItem simple_hot_back_item("Back", nullptr, &ms);
-// NumericMenuItem simple_hot_setpoint_hot("Stop Temp", nullptr, 0, 20, 255);
-// NumericMenuItem simple_hot_setpoint_cold("Start Temp", nullptr, 0, 18, 255);
-// NumericMenuItem simple_hot__on_off_item("ON/OFF", nullptr, 0, 0, 1);
+const char menu_normal_name[] PROGMEM = "Normal Heating";
+const char menu_normal_heating_value[] PROGMEM = "Stop Temp";
+const char menu_normal_cooling_value[] PROGMEM = "Start Temp";
+const char menu_normal_off[] PROGMEM = "ON/OFF";
+
+CustomRender my_render(&g_display, 4);
+MenuSystem ms(my_render);
+
+BackMenuItem back_main_screen(menu_main, &BackMainScreen, &ms);
+
+Menu pid_menu(menu_pid, nullptr);
+BackMenuItem pid_back_item(menu_back, nullptr, &ms);
+NumericMenuItem pid_kp_item(menu_pid_kp, nullptr, 0, 0, 255);
+NumericMenuItem pid_ki_item(menu_pid_ki, nullptr, 0, 0, 255);
+NumericMenuItem pid_kd_item(menu_pid_kd, nullptr, 0, 0, 255);
+NumericMenuItem pid_on_off_item(menu_pid_of_off, nullptr, 0, 0, 1);
+NumericMenuItem pid_on_off_item1(menu_pid_of_off, nullptr, 0, 0, 1);
+NumericMenuItem pid_on_off_item2(menu_pid_of_off, nullptr, 0, 0, 1);
+NumericMenuItem pid_on_off_item3(menu_pid_of_off, nullptr, 0, 0, 1);
+NumericMenuItem pid_on_off_item4(menu_pid_of_off, nullptr, 0, 0, 1);
+
+Menu simple_hot_menu(menu_normal_name);
+BackMenuItem simple_hot_back_item(menu_back, nullptr, &ms);
+NumericMenuItem simple_hot_setpoint_hot(menu_normal_heating_value, nullptr, 0, 20, 255);
+NumericMenuItem simple_hot_setpoint_cold(menu_normal_cooling_value, nullptr, 0, 18, 255);
+NumericMenuItem simple_hot__on_off_item(menu_normal_off, nullptr, 0, 0, 1);
 
 void setup()
 {
@@ -160,7 +179,7 @@ void setup()
   // }
 
   delay(1000); // Pause for 2 seconds
-  // InitializeMenu();
+  InitializeMenu();
 }
 
 void loop()
@@ -187,7 +206,7 @@ void loop()
     DisplayInfo();
     break;
   case e_DisplayMenu:
-    // ms.display();
+    ms.display();
     break;
   default:
     break;
@@ -213,23 +232,34 @@ void DelayRun(unsigned long *time, uint32_t interval, void (*callback)())
   }
 }
 
-// void InitializeMenu()
-// {
-//   ms.get_root_menu().add_menu(&pid_menu);
-//   pid_menu.add_item(&pid_back_item);
-//   pid_menu.add_item(&pid_kp_item);
-//   pid_menu.add_item(&pid_ki_item);
-//   pid_menu.add_item(&pid_kd_item);
-//   pid_menu.add_item(&pid_on_off_item);
+void InitializeMenu()
+{
+  ms.get_root_menu().add_item(&back_main_screen);
 
-//   ms.get_root_menu().add_menu(&simple_hot_menu);
-//   simple_hot_menu.add_item(&simple_hot_back_item);
-//   simple_hot_menu.add_item(&simple_hot__on_off_item);
-//   simple_hot_menu.add_item(&simple_hot_setpoint_hot);
-//   simple_hot_menu.add_item(&simple_hot_setpoint_cold);
+  ms.get_root_menu().add_menu(&pid_menu);
+  pid_menu.add_item(&pid_back_item);
+  pid_menu.add_item(&pid_kp_item);
+  pid_menu.add_item(&pid_ki_item);
+  pid_menu.add_item(&pid_kd_item);
+  pid_menu.add_item(&pid_on_off_item);
+  pid_menu.add_item(&pid_on_off_item1);
+  pid_menu.add_item(&pid_on_off_item2);
+  pid_menu.add_item(&pid_on_off_item3);
+  pid_menu.add_item(&pid_on_off_item4);
 
-//   ms.get_root_menu().add_item(&back_main_screen);
-// }
+  ms.get_root_menu().add_menu(&simple_hot_menu);
+  simple_hot_menu.add_item(&simple_hot_back_item);
+  simple_hot_menu.add_item(&simple_hot__on_off_item);
+  simple_hot_menu.add_item(&simple_hot_setpoint_hot);
+  simple_hot_menu.add_item(&simple_hot_setpoint_cold);
+}
+
+void BackMainScreen(MenuComponent *menu_component)
+{
+  // 因为是最低一级了，没东西back，无需 ms.back()
+  // ms.back();
+  display_state = e_DisplayInfo;
+}
 
 // void UpdatePidTurns()
 // {
@@ -248,18 +278,20 @@ void DealKeyPress()
       Serial.println(F("切换显示！"));
     }
     else
+    {
+      ms.select();
       Serial.println(F("menu"));
-    // ms.select();
+    }
   }
   if (BtnPressed(&g_down_btn))
   {
     Serial.println(F("down"));
-    // ms.next();
+    ms.next();
   }
   if (BtnPressed(&g_up_btn))
   {
     Serial.println(F("up"));
-    // ms.prev();
+    ms.prev();
   }
 }
 
@@ -425,7 +457,7 @@ void DisplayInfo()
     g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 4);
     g_display.setFont(u8g2_font_t0_11b_mr);
     g_display.print(F("Timer"));
-    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 5/* Timer*/ + FONT_X1_W * 2/*空两格*/, FONT_X1_H * 4);
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 5 /* Timer*/ + FONT_X1_W * 2 /*空两格*/, FONT_X1_H * 4);
     g_display.print(F("DHT"));
     g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 5 + FONT_X1_GAP);
     g_display.setFont(u8g2_font_5x7_mr); // 6px hight
