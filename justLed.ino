@@ -82,6 +82,7 @@ PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_kp, g_ki, g_kd, DIRECT
 // ############### 指示状态 ###############
 int led_1_state = LOW;
 // g_pid_input 温度
+float g_dht_temp;
 float g_dht_humidity;
 bool g_dht_humidity_err = true;
 bool g_k_type_err = true;
@@ -141,7 +142,7 @@ void setup()
   g_pid_setpoint = 70;
   myPID.SetOutputLimits(0, 255);
   myPID.SetSampleTime(INTERVAL_K_TYPE + 50);
-  myPID.SetMode(AUTOMATIC);
+  myPID.SetMode(MANUAL);
 
   // Bit2 = 1 -> "PCIE2" enabled (PIND)
   PCICR |= B00000100;
@@ -281,11 +282,12 @@ void UpdateTemp()
 
   g_pid_input = g_k_thermocouple.readCelsius();
   // g_pid_input = dht.readTemperature();
+  g_dht_temp = dht.readTemperature();
 
   // 湿度
   g_dht_humidity = dht.readHumidity();
   g_dht_humidity_err = isnan(g_dht_humidity);
-  PrintTime(g_timer_k_type);
+  // PrintTime(g_timer_k_type);
 }
 
 // 控制台输出文字
@@ -417,12 +419,21 @@ void DisplayInfo()
     // display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
     // display0.print(F("s"));
 
-    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4);
+    // g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4);
+    // g_display.setFont(u8g2_font_t0_11b_mr);
+    // g_display.print(F("Timer"));
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 4);
     g_display.setFont(u8g2_font_t0_11b_mr);
     g_display.print(F("Timer"));
-    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 5 + FONT_X1_GAP);
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 5/* Timer*/ + FONT_X1_W * 2/*空两格*/, FONT_X1_H * 4);
+    g_display.print(F("DHT"));
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 5 + FONT_X1_GAP);
     g_display.setFont(u8g2_font_5x7_mr); // 6px hight
     g_display.print(g_timer_k_type / 1000);
+    // g_display.print(5097600);
+    g_display.setCursor(5 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 6, FONT_X1_H * 5 + FONT_X1_GAP);
+    // g_display.print(100.00);
+    g_display.print(g_dht_temp);
 
     // #### 绘制 dock 栏
     // x: 0           y: Kd 换行 + 间隔 3
