@@ -1,11 +1,6 @@
 #include "CustomRender.h"
 #include "logo_xbm.h"
 
-#define PRINT_NUM_U8               \
-    u8Print(menu_item.get_name()); \
-    display_->print(F(":"));       \
-    display_->print(menu_item.get_value());
-
 CustomRender::CustomRender(U8G2_SSD1306_128X64_NONAME_2_HW_I2C *d, uint8_t lines) : display_(d), lines_(lines)
 {
 }
@@ -105,7 +100,7 @@ void CustomRender::render_numeric_menu_item(NumericMenuItem const &menu_item) co
     PRINT_NUM_U8;
 }
 
-void CustomRender::render_uint_menu_item(IntMenuItem const &menu_item) const
+void CustomRender::render_uint_menu_item(UIntMenuItem const &menu_item) const
 {
     PRINT_NUM_U8;
 }
