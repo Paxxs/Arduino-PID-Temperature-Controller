@@ -54,14 +54,16 @@ void CustomRender::render(Menu const &menu) const
                 // Serial.print(F("[当前]"));
 
                 display_->setDrawColor(1); // 重置绘制模式，绘制前景不背景
-                display_->drawRBox(0, /*避免超出*/ index, 128 - scrollbar_background_width /* 留进度条*/, 16, 2);
+                display_->drawRBox(0, /*避免超出*/ index, 128 - 1 - scrollbar_background_width /* 留进度条*/, 16, 2);
                 display_->setDrawColor(0); // 只绘制背景
                 if (menu_component->has_focus())
                 {
                     display_->setFont(u8g2_font_open_iconic_embedded_1x_t);
                     // display_->drawGlyph(0, index + 4, 69);
                     display_->print('H');
-                    // Srial.print(F("[选中]"));
+                    display_->setFont(u8g2_font_t0_12b_tr);
+                    display_->print(' ');
+                    // Serial.print(F("[选中]"));
                 }
                 display_->setFont(u8g2_font_t0_12b_tr);
             }
@@ -98,6 +100,13 @@ void CustomRender::render_numeric_menu_item(NumericMenuItem const &menu_item) co
     u8Print(menu_item.get_name());
     display_->print(F(" "));
     display_->print(menu_item.get_value());
+}
+
+void CustomRender::render_toggle_menu_item(ToggleMenuItem const &menu_item) const
+{
+    u8Print(menu_item.get_name());
+    display_->print(F(":"));
+    u8Print(menu_item.get_state_string());
 }
 
 void CustomRender::render_menu(Menu const &menu) const

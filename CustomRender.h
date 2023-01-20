@@ -7,18 +7,22 @@
 #include <U8g2lib.h>
 
 #include <MenuSystem.h>
+#include "ToggleMenuItem.h"
+
+class ToggleMenuItem;
 
 class CustomRender : public MenuComponentRenderer
 {
 public:
     CustomRender(U8G2_SSD1306_128X64_NONAME_2_HW_I2C *d, uint8_t lines);
     // override
-    virtual void render(Menu const &menu) const;
+    /*virtual */ void render(Menu const &menu) const;
 
-    virtual void render_menu_item(MenuItem const &menu_item) const;
-    virtual void render_back_menu_item(BackMenuItem const &menu_item) const;
-    virtual void render_numeric_menu_item(NumericMenuItem const &menu_item) const;
-    virtual void render_menu(Menu const &menu) const;
+    /*virtual */ void render_menu_item(MenuItem const &menu_item) const;
+    /*virtual */ void render_back_menu_item(BackMenuItem const &menu_item) const;
+    /*virtual */ void render_numeric_menu_item(NumericMenuItem const &menu_item) const;
+    /*virtual */ void render_menu(Menu const &menu) const;
+    /*virtual */ void render_toggle_menu_item(ToggleMenuItem const &menu_item) const;
 
 private:
     U8G2_SSD1306_128X64_NONAME_2_HW_I2C *display_;
