@@ -8,8 +8,10 @@
 
 #include <MenuSystem.h>
 #include "ToggleMenuItem.h"
+#include "IntMenuItem.h"
 
 class ToggleMenuItem;
+class IntMenuItem;
 
 class CustomRender : public MenuComponentRenderer
 {
@@ -23,6 +25,7 @@ public:
     /*virtual */ void render_numeric_menu_item(NumericMenuItem const &menu_item) const;
     /*virtual */ void render_menu(Menu const &menu) const;
     /*virtual */ void render_toggle_menu_item(ToggleMenuItem const &menu_item) const;
+    /*virtual */ void render_uint_menu_item(IntMenuItem const &menu_item) const;
 
 private:
     U8G2_SSD1306_128X64_NONAME_2_HW_I2C *display_;
