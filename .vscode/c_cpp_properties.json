@@ -17,7 +17,8 @@
             "intelliSenseMode": "gcc-x64",
             "includePath": [
                 "C:\\Users\\Super\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\avr\\1.8.6\\cores\\arduino",
-                "C:\\Users\\Super\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\avr\\1.8.6\\variants\\standard",
+                "C:\\Users\\Super\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\avr\\1.8.6\\variants\\eightanaloginputs",
+                "C:\\Users\\Super\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\avr\\1.8.6\\libraries\\EEPROM\\src",
                 "D:\\Project\\Arduino\\libraries\\U8g2\\src",
                 "D:\\Project\\Arduino\\libraries\\MAX6675_library",
                 "D:\\Project\\Arduino\\libraries\\DHT_sensor_library",
@@ -38,7 +39,7 @@
             "defines": [
                 "F_CPU=16000000L",
                 "ARDUINO=10819",
-                "ARDUINO_AVR_UNO",
+                "ARDUINO_AVR_NANO",
                 "ARDUINO_ARCH_AVR",
                 "__DBL_MIN_EXP__=(-125)",
                 "__HQ_FBIT__=15",
