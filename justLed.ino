@@ -80,6 +80,10 @@ double g_kd = 1;
 double g_pid_setpoint, g_pid_input, g_pid_output;
 PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_kp, g_ki, g_kd, DIRECT);
 
+// ############## 普通加热 ##############
+float g_start_temp; // 开始温度，当低于开始加热
+float g_stop_temp;  // 结束温度，当高于停止加热
+
 // ############### 指示状态 ###############
 int led_1_state = LOW;
 // g_pid_input 温度
@@ -104,7 +108,18 @@ enum DisplayState
   e_DisplayMenu
 };
 
-DisplayState display_state = e_DisplayInfo;
+// 加热模式
+enum HeatingState
+{
+  ePid,
+  eNormalHeating,
+  eOff
+};
+
+// 当前屏幕显示内容
+DisplayState g_display_state = e_DisplayInfo;
+// 当前加热模式
+HeatingState g_heating_state = eOff;
 
 // ############Menu#########
 // const uint16_t updateMenuInterval = 200;
@@ -128,7 +143,7 @@ const char menu_normal_cooling_value[] PROGMEM = "Start Temp";
 CustomRender my_render(&g_display, 4);
 MenuSystem ms(my_render);
 
-BackMenuItem back_main_screen(menu_main, &BackMainScreen, &ms);
+BackMenuItem back_main_screen(menu_main, &CallBack_BackMainScreen, &ms);
 
 Menu pid_menu(menu_pid, nullptr);
 BackMenuItem pid_back_item(menu_back, nullptr, &ms);
@@ -200,23 +215,10 @@ void loop()
   // DelayRun(&g_time_key, INTERVAL_KEY_DE, DealKeyPress);
 
   DealKeyPress();
+  UpdateDisplayContent();
 
-  myPID.Compute();
-  analogWrite(SSR_PIN, g_pid_output);
-
-  switch (display_state)
-  {
-  case e_DisplayInfo:
-    DisplayInfo();
-    break;
-  case e_DisplayMenu:
-    ms.display();
-    break;
-  default:
-    break;
-  }
-  // display
-  // DisplayInfo();
+  UpdateHeatingMode();
+  OperateHeating();
 }
 
 /**
@@ -254,12 +256,74 @@ void InitializeMenu()
   simple_hot_menu.add_item(&simple_hot_setpoint_cold);
 }
 
-void BackMainScreen(MenuComponent *menu_component)
+/**
+ * @brief 菜单页面返回主页面回调函数
+ *
+ */
+void CallBack_BackMainScreen(MenuComponent *menu_component)
 {
   // 因为是最低一级了，没东西back，无需 ms.back()
-  display_state = e_DisplayInfo;
+  g_display_state = e_DisplayInfo;
 }
 
+// 更新加热模式
+void UpdateHeatingMode()
+{
+  // PID 优先
+  if (g_pid_state && g_k_type_err == false)
+    g_heating_state = ePid;
+  else if (g_normal_heating_state)
+    g_heating_state = eNormalHeating;
+  else
+    g_heating_state = eOff;
+}
+
+// 操作加热
+void OperateHeating()
+{
+  switch (g_heating_state)
+  {
+  case eNormalHeating:
+    // myPID.SetMode(MANUAL);
+    if (g_pid_input > g_stop_temp) // 达到停止温度就停止
+    {
+      digitalWrite(SSR_PIN, LOW);
+      digitalWrite(LED_PIN, LOW);
+    }
+    if (g_pid_input < g_start_temp) // 低于开始温度就开始
+    {
+      digitalWrite(SSR_PIN, HIGH);
+      digitalWrite(LED_PIN, HIGH);
+    }
+  case eOff: // eNormalHeating 行为也包括在内
+    myPID.SetMode(MANUAL);
+    digitalWrite(SSR_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
+    break;
+  case ePid:
+    myPID.SetMode(AUTOMATIC);
+    digitalWrite(LED_PIN, HIGH);
+    myPID.Compute();
+    analogWrite(SSR_PIN, g_pid_output);
+    break;
+  }
+}
+
+// 更新界面内容
+void UpdateDisplayContent()
+{
+  switch (g_display_state)
+  {
+  case e_DisplayInfo:
+    DisplayInfo();
+    break;
+  case e_DisplayMenu:
+    ms.display();
+    break;
+  }
+  // display
+  // DisplayInfo();
+}
 // void UpdatePidTurns()
 // {
 //   g_ki = pid_ki_item.get_value();
@@ -267,13 +331,14 @@ void BackMainScreen(MenuComponent *menu_component)
 //   g_kd = pid_kd_item.get_value();
 // }
 
+// 处理按键
 void DealKeyPress()
 {
   if (BtnPressed(&g_menu_btn))
   {
-    if (display_state != e_DisplayMenu)
+    if (g_display_state != e_DisplayMenu)
     {
-      display_state = e_DisplayMenu;
+      g_display_state = e_DisplayMenu;
       // Serial.println(F("切换显示！"));
     }
     else
@@ -294,6 +359,13 @@ void DealKeyPress()
   }
 }
 
+/**
+ * @brief 将按钮状态设置为按下（重置）
+ *
+ * @param btn_state 按钮当前状态变量指针
+ * @return true 按钮被用户按下
+ * @return false 按钮未按下
+ */
 bool BtnPressed(volatile bool *btn_state)
 {
   if (*btn_state)
@@ -326,7 +398,7 @@ void UpdateTemp()
   // 湿度
   g_dht_humidity = dht.readHumidity();
   g_dht_humidity_err = isnan(g_dht_humidity);
-  // PrintTime(g_timer_k_type);
+  PrintTime(g_timer_k_type);
 }
 
 // 控制台输出文字
@@ -339,10 +411,14 @@ void PrintTime(unsigned long time_millis)
   Serial.print(F("Temp: "));
 
   Serial.print(g_pid_input);
-  Serial.print(F(""));
+  Serial.print(F(" "));
   Serial.print(F("-k_type_err:"));
-  Serial.println(g_k_type_err ? F("ERROR") : F("NO"));
-  Serial.println(GetFreeRam());
+  Serial.print(g_k_type_err ? F("ERROR") : F("NO"));
+  Serial.print(F(" "));
+  Serial.print(GetFreeRam());
+  Serial.print(F(" "));
+  Serial.print(F("state:"));
+  Serial.println(g_heating_state);
 
   Serial.print(g_pre_time_down_btn);
   Serial.print(F(" "));
@@ -374,7 +450,7 @@ void DisplayLogo()
 #define FONT_X2_W 12
 #define FONT_X2_H 16
 
-// 主信息显示界面
+// 绘制信息显示界面（MainScreen)
 void DisplayInfo()
 {
   // cspell:words ncen profont
@@ -492,12 +568,12 @@ void DisplayInfo()
 
     g_display.setCursor(4, FONT_X1_H * 6 + FONT_X1_GAP * 2 + 1);
     g_display.setFont(u8g2_font_t0_11b_mr);
-    if (g_pid_state)
-      g_display.print(F("PID")); // PID HOT OFF
-    else if (g_normal_heating_state)
-      g_display.print(F("HOT")); // PID HOT OFF
+    if (g_heating_state == ePid) // PID HOT OFF
+      g_display.print(F("PID"));
+    else if (g_heating_state == eNormalHeating)
+      g_display.print(F("HOT"));
     else
-      g_display.print(F("OFF")); // PID HOT OFF
+      g_display.print(F("OFF"));
 
     // #### 覆盖 PID状态 末尾凸出来的背景
     // 在 RBox 底部绘制一个方块
