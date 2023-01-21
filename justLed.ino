@@ -1,6 +1,16 @@
 // cspell:words OLED datasheet Adafruit SWITCHCAPVCC PCICR PCMSK
 // ############### 持久化存储 ###############
 #include <EEPROM.h>
+/**
+ * 要持久化的数据
+ * pid_state bool (1bit)
+ * heating_state bool(1bit)
+ * setpoint int
+ * setpoint_diff int
+ * Kp float
+ * Ki float
+ * Kd float
+ */
 
 // ############### Display ###############
 // #include <Wire.h>
@@ -77,16 +87,25 @@ unsigned long g_pre_time_up_btn;
 // unsigned long g_pre_time_back_btn;
 
 // ############### PID ###############
-double g_kp = 2;
-double g_ki = 1;
-double g_kd = 1;
-double g_pid_setpoint = 20, g_pid_input, g_pid_output;
-PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_kp, g_ki, g_kd, DIRECT);
+struct PERSIS_DATA
+{
+  bool pid_state /* PID 开启状态 */, heating_state /* 普通恒温开启状态 */;
+  int setpoint, setpoint_diff;
+  double Kp, Ki, Kd;
+};
+
+PERSIS_DATA g_persist_data;
+
+// double g_kp = 2;
+// double g_ki = 1;
+// double g_kd = 1;
+double g_pid_setpoint, g_pid_input, g_pid_output;
+PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_persist_data.Kp, g_persist_data.Ki, g_persist_data.Kd, DIRECT);
 
 // ############## 普通加热 ##############
 // float g_start_temp; // 开始温度，当低于开始加热
 // float g_stop_temp;  // 结束温度，当高于停止加热
-uint32_t g_setpoint_diff = 5; // 与 setpoint 差值
+// uint32_t g_setpoint_diff = 5; // 与 setpoint 差值
 
 // ############### 指示状态 ###############
 int led_1_state = LOW;
@@ -94,10 +113,8 @@ int led_1_state = LOW;
 float g_dht_temp;
 float g_dht_humidity;
 
-bool g_dht_humidity_err = true;      // 温度传感器错误状态
-bool g_k_type_err = true;            // 热电偶错误状态
-bool g_pid_state = false;            // PID 开启状态
-bool g_normal_heating_state = false; // 普通恒温开启状态
+bool g_dht_humidity_err = true; // 温度传感器错误状态
+bool g_k_type_err = true;       // 热电偶错误状态
 
 // btn state
 volatile bool g_down_btn = false;
@@ -126,7 +143,6 @@ DisplayState g_display_state = e_DisplayInfo;
 HeatingState g_heating_state = eOff;
 
 // ############Menu#########
-// const uint16_t updateMenuInterval = 200;
 
 const char menu_main_str[] PROGMEM = "Back Home";
 const char menu_back_str[] PROGMEM = "Back";
@@ -143,33 +159,37 @@ const char menu_pid_setpoint_str[] PROGMEM = "SetPoint";
 
 const char menu_normal_str[] PROGMEM = "Normal Heating";
 const char menu_normal_diff_str[] PROGMEM = "Temp Diff";
+const char menu_save_str[] PROGMEM = "Save";
 
 CustomRender my_render(&g_display, 4);
 MenuSystem ms(my_render);
 
-BackMenuItem back_main_screen(menu_main_str, &CallBack_BackMainScreen, &ms);
+BackMenuItem back_main_screen(menu_main_str, &CallBack_BackMainScreen, &ms); // 返回主页面
+BackMenuItem save_main_screen(menu_save_str, &CallBack_SaveEEPROM, &ms);     // 持久化保存
 
 Menu pid_menu(menu_pid_str, nullptr);
 BackMenuItem pid_back_item(menu_back_str, &CallBack_SaveValue, &ms);
 NumericMenuItem pid_kp_item(menu_pid_kp_str, nullptr, 0.0, 0.0, 255.0, 0.1);
-NumericMenuItem pid_ki_item(menu_pid_ki_str, nullptr, 0.0, 0.0, 255.0, 0.1);
-NumericMenuItem pid_kd_item(menu_pid_kd_str, nullptr, 0.0, 0.0, 255.0, 0.1);
+NumericMenuItem pid_ki_item(menu_pid_ki_str, nullptr, 0.0, 0.0, 255.0, 0.01);
+NumericMenuItem pid_kd_item(menu_pid_kd_str, nullptr, 0.0, 0.0, 255.0, 0.01);
 UIntMenuItem pid_setpoint_item(menu_pid_setpoint_str, nullptr, 0, 255);
-ToggleMenuItem pid_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_pid_state);
+ToggleMenuItem pid_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.pid_state);
 
 Menu simple_hot_menu(menu_normal_str);
 BackMenuItem simple_hot_back_item(menu_back_str, &CallBack_SaveValue, &ms);
 UIntMenuItem simple_hot_diff(menu_normal_diff_str, nullptr, 0, 255);
-ToggleMenuItem simple_hot_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_normal_heating_state);
+ToggleMenuItem simple_hot_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.heating_state);
 
 void setup()
 {
   g_display.begin(); // always return 1(true)
   DisplayLogo();
-
   // noInterrupts();
 
   Serial.begin(9600);
+
+  InitializeVariable();
+
   pinMode(LED_PIN, OUTPUT);
   pinMode(SSR_PIN, OUTPUT);
   // digitalWrite(SSR_PIN, LOW);
@@ -245,6 +265,23 @@ void DelayRun(unsigned long *time, uint32_t interval, void (*callback)())
 void InitializeVariable()
 {
   // TODO： 读取持久化存储中的变量
+  // PERSIS_DATA data_read;
+  EEPROM.get(0, g_persist_data);
+  Serial.println("init:");
+  if (g_persist_data.setpoint < 0 || g_persist_data.setpoint_diff < 0 || g_persist_data.Kp == NAN)
+  {
+    g_persist_data.pid_state = g_persist_data.heating_state = false;
+    g_persist_data.setpoint = 20;
+    g_persist_data.setpoint_diff = 5;
+    g_persist_data.Kp = g_persist_data.Ki = g_persist_data.Kd = 1.0;
+  }
+  Serial.println(g_persist_data.pid_state);
+  Serial.println(g_persist_data.heating_state);
+  Serial.println(g_persist_data.setpoint);
+  Serial.println(g_persist_data.setpoint_diff);
+  Serial.println(g_persist_data.Kp);
+  Serial.println(g_persist_data.Ki);
+  Serial.println(g_persist_data.Kd);
 }
 
 void InitializeMenu()
@@ -264,23 +301,34 @@ void InitializeMenu()
   simple_hot_menu.add_item(&simple_hot_on_off_item); // 指针无需下方初始化值
   simple_hot_menu.add_item(&simple_hot_diff);
 
-  // 更新默认值
-  pid_kp_item.set_value(g_kp);
-  pid_ki_item.set_value(g_ki);
-  pid_kd_item.set_value(g_kd);
-  pid_setpoint_item.set_value((int)g_pid_setpoint);
+  ms.get_root_menu().add_item(&save_main_screen);
 
-  simple_hot_diff.set_value(g_setpoint_diff);
+  // 更新默认值
+  pid_kp_item.set_value(g_persist_data.Kp);
+  pid_ki_item.set_value(g_persist_data.Ki);
+  pid_kd_item.set_value(g_persist_data.Kd);
+  pid_setpoint_item.set_value(g_persist_data.setpoint);
+  g_pid_setpoint = g_persist_data.setpoint;
+
+  simple_hot_diff.set_value(g_persist_data.setpoint_diff);
 }
 
+// 返回即保存
 void CallBack_SaveValue(MenuComponent *menu_component)
 {
-  g_kp = pid_kp_item.get_value();
-  g_ki = pid_ki_item.get_value();
-  g_kd = pid_kd_item.get_value();
-  g_pid_setpoint = pid_setpoint_item.get_value();
+  g_persist_data.Kp = pid_kp_item.get_value();
+  g_persist_data.Ki = pid_ki_item.get_value();
+  g_persist_data.Kd = pid_kd_item.get_value();
 
-  g_setpoint_diff = simple_hot_diff.get_value();
+  g_pid_setpoint = g_persist_data.setpoint = pid_setpoint_item.get_value();
+
+  g_persist_data.setpoint_diff = simple_hot_diff.get_value();
+}
+
+// 保存至 EEPROM
+void CallBack_SaveEEPROM(MenuComponent *menu_component)
+{
+  EEPROM.put(0, g_persist_data);
 }
 /**
  * @brief 菜单页面返回主页面回调函数
@@ -296,7 +344,7 @@ void CallBack_BackMainScreen(MenuComponent *menu_component)
 void UpdateHeatingMode()
 {
   // PID 优先
-  if (g_pid_state && g_k_type_err == false)
+  if (g_persist_data.pid_state && g_k_type_err == false)
   {
     g_heating_state = ePid;
     bitSet(PORTD, LED_PIN);
@@ -305,7 +353,7 @@ void UpdateHeatingMode()
     analogWrite(SSR_PIN, g_pid_output);
     return;
   }
-  else if (g_normal_heating_state)
+  else if (g_persist_data.heating_state)
   {
     g_heating_state = eNormalHeating;
     if (g_pid_input >= g_pid_setpoint) // 达到停止温度就停止
@@ -315,7 +363,7 @@ void UpdateHeatingMode()
       bitClear(PORTB, 3); // SSR
       bitClear(PORTD, LED_PIN);
     }
-    else if (g_pid_input < (g_pid_setpoint - g_setpoint_diff)) // 低于开始温度就开始
+    else if (g_pid_input < (g_pid_setpoint - g_persist_data.setpoint_diff)) // 低于开始温度就开始
     {
       // digitalWrite(SSR_PIN, HIGH);
       // digitalWrite(LED_PIN, HIGH);
@@ -515,7 +563,7 @@ void DisplayInfo()
     if (g_heating_state == ePid)
       g_display.print((int)g_pid_output);
     else
-      g_display.print(g_setpoint_diff);
+      g_display.print(g_persist_data.setpoint_diff);
 
     // #### 绘制 PID 参数框
     // // x: 2       y: + 1x 换行
@@ -537,15 +585,15 @@ void DisplayInfo()
     g_display.setFont(u8g2_font_5x7_mr); // 6px hight
     g_display.print("Kp: ");
     // g_display.print(F("Kp: "));
-    g_display.print(g_kp);
+    g_display.print(g_persist_data.Kp);
     g_display.setCursor(4, FONT_X1_H * 4 + FONT_X1_GAP);
     g_display.print("Ki: ");
     // g_display.print(F("Ki: "));
-    g_display.print(g_ki);
+    g_display.print(g_persist_data.Ki);
     g_display.setCursor(4, FONT_X1_H * 5 + FONT_X1_GAP);
     g_display.print("Kd: ");
     // g_display.print(F("Kd: "));
-    g_display.print(g_kd);
+    g_display.print(g_persist_data.Kd);
 
     // #### 绘制 PID 参数列表侧边系统运行时间
     // 时间文本 x: 9个1x 加4个空格    y: 和 Ki 一行
