@@ -24,7 +24,7 @@ void CustomRender::render(Menu const &menu) const
         display_->setFont(u8g2_font_t0_11_tr);
         display_->setFontPosTop(); // 顶部对齐
         display_->setDrawColor(1); // 不反色
-        display_->drawXBMP(128 - scrollbar_background_width, 0, scrollbar_background_width, scrollbar_background_height, scrollbar_background_bits);
+        display_->drawXBMP(128 - 2, 0, scrollbar_background_small_width, scrollbar_background_small_height, scrollbar_background_small_bits);
         // 绘制滚动条
         display_->drawBox(125, 64 / menu.get_num_components() * menu.get_current_component_num(), 3, 64 / menu.get_num_components());
         display_->setCursor(8, 3);

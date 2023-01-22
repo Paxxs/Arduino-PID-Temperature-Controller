@@ -90,7 +90,7 @@ unsigned long g_pre_time_up_btn;
 struct PERSIS_DATA
 {
   bool pid_state /* PID 开启状态 */, heating_state /* 普通恒温开启状态 */;
-  int setpoint, setpoint_diff;
+  uint8_t setpoint, setpoint_diff;
   double Kp, Ki, Kd;
 };
 
@@ -103,12 +103,11 @@ double g_pid_setpoint, g_pid_input, g_pid_output;
 PID myPID(&g_pid_input, &g_pid_output, &g_pid_setpoint, g_persist_data.Kp, g_persist_data.Ki, g_persist_data.Kd, DIRECT);
 
 // ############## 普通加热 ##############
-// float g_start_temp; // 开始温度，当低于开始加热
-// float g_stop_temp;  // 结束温度，当高于停止加热
+// float g_start_temp; // 开始温度，当低于开始加热 [改为使用差值]
+// float g_stop_temp;  // 结束温度，当高于停止加热 [改为使用差值]
 // uint32_t g_setpoint_diff = 5; // 与 setpoint 差值
 
 // ############### 指示状态 ###############
-int led_1_state = LOW;
 // g_pid_input 温度
 float g_dht_temp;
 float g_dht_humidity;
@@ -159,7 +158,8 @@ const char menu_pid_setpoint_str[] PROGMEM = "SetPoint";
 
 const char menu_normal_str[] PROGMEM = "Normal Heating";
 const char menu_normal_diff_str[] PROGMEM = "Temp Diff";
-const char menu_save_str[] PROGMEM = "Save";
+
+const char menu_save_str[] PROGMEM = "Save to EEPROM";
 
 CustomRender my_render(&g_display, 4);
 MenuSystem ms(my_render);
@@ -168,7 +168,7 @@ BackMenuItem back_main_screen(menu_main_str, &CallBack_BackMainScreen, &ms); // 
 BackMenuItem save_main_screen(menu_save_str, &CallBack_SaveEEPROM, &ms);     // 持久化保存
 
 Menu pid_menu(menu_pid_str, nullptr);
-BackMenuItem pid_back_item(menu_back_str, &CallBack_SaveValue, &ms);
+BackMenuItem menu_back_item(menu_back_str, &CallBack_SaveValue, &ms);
 NumericMenuItem pid_kp_item(menu_pid_kp_str, nullptr, 0.0, 0.0, 255.0, 0.1);
 NumericMenuItem pid_ki_item(menu_pid_ki_str, nullptr, 0.0, 0.0, 255.0, 0.01);
 NumericMenuItem pid_kd_item(menu_pid_kd_str, nullptr, 0.0, 0.0, 255.0, 0.01);
@@ -176,7 +176,6 @@ UIntMenuItem pid_setpoint_item(menu_pid_setpoint_str, nullptr, 0, 255);
 ToggleMenuItem pid_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.pid_state);
 
 Menu simple_hot_menu(menu_normal_str);
-BackMenuItem simple_hot_back_item(menu_back_str, &CallBack_SaveValue, &ms);
 UIntMenuItem simple_hot_diff(menu_normal_diff_str, nullptr, 0, 255);
 ToggleMenuItem simple_hot_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.heating_state);
 
@@ -266,22 +265,29 @@ void InitializeVariable()
 {
   // TODO： 读取持久化存储中的变量
   // PERSIS_DATA data_read;
-  EEPROM.get(0, g_persist_data);
-  Serial.println("init:");
-  if (g_persist_data.setpoint < 0 || g_persist_data.setpoint_diff < 0 || g_persist_data.Kp == NAN)
+  // byte tmp;
+  // EEPROM.get(0 + sizeof(bool) * 2 + sizeof(uint8_t) * 2, tmp);
+  // Serial.println(tmp);
+  if (EEPROM.read(sizeof(bool) * 2 + sizeof(uint8_t) * 2) != 255 &&
+      EEPROM.read(sizeof(bool) * 2 + sizeof(uint8_t) * 2 + sizeof(float) * 2) != 255)
   {
-    g_persist_data.pid_state = g_persist_data.heating_state = false;
-    g_persist_data.setpoint = 20;
-    g_persist_data.setpoint_diff = 5;
-    g_persist_data.Kp = g_persist_data.Ki = g_persist_data.Kd = 1.0;
+    EEPROM.get(0, g_persist_data);
+    Serial.println("init:");
+    // if (g_persist_data.setpoint < 0 || g_persist_data.setpoint_diff < 0 || g_persist_data.Kp == NAN)
+    // {
+    //   g_persist_data.pid_state = g_persist_data.heating_state = false;
+    //   g_persist_data.setpoint = 20;
+    //   g_persist_data.setpoint_diff = 5;
+    //   g_persist_data.Kp = g_persist_data.Ki = g_persist_data.Kd = 1.0;
+    // }
+    Serial.println(g_persist_data.pid_state);
+    Serial.println(g_persist_data.heating_state);
+    Serial.println(g_persist_data.setpoint);
+    Serial.println(g_persist_data.setpoint_diff);
+    Serial.println(g_persist_data.Kp);
+    Serial.println(g_persist_data.Ki);
+    Serial.println(g_persist_data.Kd);
   }
-  Serial.println(g_persist_data.pid_state);
-  Serial.println(g_persist_data.heating_state);
-  Serial.println(g_persist_data.setpoint);
-  Serial.println(g_persist_data.setpoint_diff);
-  Serial.println(g_persist_data.Kp);
-  Serial.println(g_persist_data.Ki);
-  Serial.println(g_persist_data.Kd);
 }
 
 void InitializeMenu()
@@ -289,7 +295,7 @@ void InitializeMenu()
   ms.get_root_menu().add_item(&back_main_screen);
 
   ms.get_root_menu().add_menu(&pid_menu);
-  pid_menu.add_item(&pid_back_item);
+  pid_menu.add_item(&menu_back_item);
   pid_menu.add_item(&pid_kp_item);
   pid_menu.add_item(&pid_ki_item);
   pid_menu.add_item(&pid_kd_item);
@@ -297,7 +303,8 @@ void InitializeMenu()
   pid_menu.add_item(&pid_on_off_item); // 指针无需下方初始化值
 
   ms.get_root_menu().add_menu(&simple_hot_menu);
-  simple_hot_menu.add_item(&simple_hot_back_item);
+  simple_hot_menu.add_item(&menu_back_item);
+  simple_hot_menu.add_item(&pid_setpoint_item);
   simple_hot_menu.add_item(&simple_hot_on_off_item); // 指针无需下方初始化值
   simple_hot_menu.add_item(&simple_hot_diff);
 
@@ -363,7 +370,7 @@ void UpdateHeatingMode()
       bitClear(PORTB, 3); // SSR
       bitClear(PORTD, LED_PIN);
     }
-    else if (g_pid_input < (g_pid_setpoint - g_persist_data.setpoint_diff)) // 低于开始温度就开始
+    else if (g_pid_input < (g_persist_data.setpoint - g_persist_data.setpoint_diff)) // 低于开始温度就开始
     {
       // digitalWrite(SSR_PIN, HIGH);
       // digitalWrite(LED_PIN, HIGH);
@@ -507,6 +514,13 @@ void DisplayLogo()
     // g_display.setDrawColor(1);
     // g_display.setBitmapMode(1);
     g_display.drawXBMP((SCREEN_WIDTH - project_logo_width) / 2, 0, project_logo_width, project_logo_height, project_logo_bits);
+    // g_display.setCursor((SCREEN_WIDTH - project_logo_width) / 2 + project_logo_width - 13 /* 定位到 V的右方 */, 11); // 绘制版本号
+    // g_display.setFont(u8g2_font_5x7_tn);
+    // g_display.print(project_version_major);
+    // g_display.print('.');
+    // g_display.print(project_version_minor);
+    // g_display.print('.');
+    // g_display.print(project_version_patch);
   } while (g_display.nextPage());
 }
 
@@ -535,7 +549,7 @@ void DisplayInfo()
     g_display.drawStr(FONT_X1_W * 3, 0, "SetPoint");
     g_display.setFont(u8g2_font_t0_11_mr);
     g_display.setCursor(FONT_X1_W * (3 + 9), 0);
-    g_display.print(g_pid_setpoint);
+    g_display.print(g_persist_data.setpoint);
 
     // #### 当前温度
     // display0.setCursor(0, FONT_X1_H * 1 + FONT_X1_GAP); // 换行加个间隙
@@ -558,6 +572,17 @@ void DisplayInfo()
 
     g_display.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 1 + FONT_X1_GAP); // 保持 2 间隙
     g_display.print(F("PID"));
+
+    // #### PID 输出（温度侧边）底部的系统运行时间标题
+    // g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4);
+    // g_display.setFont(u8g2_font_t0_11b_mr);
+    // g_display.print(F("Timer"));
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 4);
+    g_display.setFont(u8g2_font_t0_11b_mr);
+    g_display.print("Timer");
+    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 5 /* Timer*/ + FONT_X1_W * 2 /*空两格*/, FONT_X1_H * 4);
+    g_display.print("DHT");
+
     g_display.setCursor(FONT_X2_W * 6 + FONT_X1_W * 4 + 1, FONT_X1_H * 2 + FONT_X1_GAP); // 1x 换行
     g_display.setFont(u8g2_font_t0_11_mr);
     if (g_heating_state == ePid)
@@ -595,7 +620,7 @@ void DisplayInfo()
     // g_display.print(F("Kd: "));
     g_display.print(g_persist_data.Kd);
 
-    // #### 绘制 PID 参数列表侧边系统运行时间
+    // #### 绘制 PID 参数列表侧边的系统运行时间
     // 时间文本 x: 9个1x 加4个空格    y: 和 Ki 一行
     // 时间数字 x: 9个1x 加3个空格    y: 和 Kd 一行
     // display0.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4 + FONT_X1_GAP);
@@ -605,15 +630,6 @@ void DisplayInfo()
     // // display0.print(5097600);
     // display0.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
     // display0.print(F("s"));
-
-    // g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 3, FONT_X1_H * 4);
-    // g_display.setFont(u8g2_font_t0_11b_mr);
-    // g_display.print(F("Timer"));
-    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 4);
-    g_display.setFont(u8g2_font_t0_11b_mr);
-    g_display.print("Timer");
-    g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 5 /* Timer*/ + FONT_X1_W * 2 /*空两格*/, FONT_X1_H * 4);
-    g_display.print("DHT");
     g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 5 + FONT_X1_GAP);
     g_display.setFont(u8g2_font_5x7_mr); // 6px hight
     g_display.print(g_timer_k_type / 1000);
