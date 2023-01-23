@@ -5,17 +5,6 @@ CustomRender::CustomRender(U8G2_SSD1306_128X64_NONAME_2_HW_I2C *d, uint8_t lines
 {
 }
 
-void CustomRender::u8Print(const char *str) const
-{
-    char c;
-    if (!str)
-        return;
-    while ((c = pgm_read_byte(str++)))
-    {
-        display_->print(c);
-    }
-}
-
 void CustomRender::render(Menu const &menu) const
 {
     display_->firstPage();
@@ -84,14 +73,12 @@ void CustomRender::render(Menu const &menu) const
 
 void CustomRender::render_menu_item(MenuItem const &menu_item) const
 {
-    // display_->print(menu_item.get_name());
-    u8Print(menu_item.get_name());
+    display_->print((const __FlashStringHelper *)menu_item.get_name());
 }
 
 void CustomRender::render_back_menu_item(BackMenuItem const &menu_item) const
 {
-    // display_->print(menu_item.get_name());
-    u8Print(menu_item.get_name());
+    display_->print((const __FlashStringHelper *)menu_item.get_name());
 }
 
 void CustomRender::render_numeric_menu_item(NumericMenuItem const &menu_item) const
@@ -107,13 +94,12 @@ void CustomRender::render_uint_menu_item(UIntMenuItem const &menu_item) const
 
 void CustomRender::render_toggle_menu_item(ToggleMenuItem const &menu_item) const
 {
-    u8Print(menu_item.get_name());
+    display_->print((const __FlashStringHelper *)menu_item.get_name());
     display_->print(F(":"));
-    u8Print(menu_item.get_state_string());
+    display_->print((const __FlashStringHelper *)menu_item.get_state_string());
 }
 
 void CustomRender::render_menu(Menu const &menu) const
 {
-    // display_->print(menu.get_name());
-    u8Print(menu.get_name());
+    display_->print((const __FlashStringHelper *)menu.get_name());
 }

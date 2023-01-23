@@ -22,7 +22,7 @@ bool UIntMenuItem::next(bool loop)
 {
 
     value_ += increment_;
-    if (get_value() > max_value_)
+    if (value_ > max_value_)
     {
         if (loop) // 如果循环，超过最大则最小
             value_ = 0;
@@ -33,14 +33,15 @@ bool UIntMenuItem::next(bool loop)
 }
 bool UIntMenuItem::prev(bool loop)
 {
-    value_ -= increment_;
-    if (get_value() < 0)
+    if (value_ == 0)
     {
         if (loop) // 如果循环，小于最小则最大
             value_ = max_value_;
         else
             value_ = 0;
+        return true;
     }
+    value_ -= increment_;
     return true;
 }
 

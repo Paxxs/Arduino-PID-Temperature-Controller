@@ -1,9 +1,9 @@
 #ifndef _MY_RENDERER_P_H
 #define _MY_RENDERER_P_H
 
-#define PRINT_NUM_U8               \
-    u8Print(menu_item.get_name()); \
-    display_->print(F(":"));       \
+#define PRINT_NUM_U8                                                    \
+    display_->print((const __FlashStringHelper *)menu_item.get_name()); \
+    display_->print(F(":"));                                            \
     display_->print(menu_item.get_value());
 
 #include <U8g2lib.h>
@@ -32,7 +32,6 @@ public:
 private:
     U8G2_SSD1306_128X64_NONAME_2_HW_I2C *display_;
     uint8_t lines_;
-    void u8Print(const char *str) const;
 };
 
 #endif
