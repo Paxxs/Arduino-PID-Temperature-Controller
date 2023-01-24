@@ -160,6 +160,8 @@ const char menu_normal_diff_str[] PROGMEM = "Diff";
 const char menu_save_str[] PROGMEM = "Save to EEPROM";
 const char menu_read_from_com[] PROGMEM = "Read COM";
 
+const char error_str[] PROGMEM = "ERR";
+
 CustomRender my_render(&g_display, 4);
 MenuSystem ms(my_render);
 
@@ -371,7 +373,7 @@ void UpdateHeatingMode()
     analogWrite(SSR_PIN, g_pid_output);
     return;
   }
-  else if (g_persist_data.heating_state)
+  else if (g_persist_data.heating_state && g_k_type_err == false)
   {
     g_heating_state = eNormalHeating;
     if (g_pid_input >= g_pid_setpoint) // 达到停止温度就停止
@@ -478,8 +480,9 @@ bool BtnPressed(volatile bool *btn_state)
 
 void UpdateTemp()
 {
-  g_pid_input = g_k_thermocouple.readCelsius();
-  g_k_type_err = isnan(g_pid_input);
+  float tmp = g_k_thermocouple.readCelsius();
+  if (!(g_k_type_err = isnan(tmp))) // 如果没有错误，温度更新，避免 nan 传入 pid
+    g_pid_input = tmp;
 
   g_dht_temp = dht.readTemperature();
   // 湿度
@@ -501,10 +504,10 @@ void PrintInfo(unsigned long *time_millis)
 
   // Serial.print(F(" "));
   Serial.print(F("-"));
-  Serial.print(g_heating_state);
+  Serial.print(g_pid_output);
 
   Serial.print(F("-"));
-  Serial.println(g_pid_output);
+  Serial.println(g_heating_state);
 }
 
 // 显示 logo
@@ -661,6 +664,8 @@ void DisplayInfo()
       g_display.print((const __FlashStringHelper *)menu_pid_str);
     else if (g_heating_state == eNormalHeating)
       g_display.print("HOT");
+    else if (g_k_type_err)
+      g_display.print((const __FlashStringHelper *)error_str);
     else
       g_display.print((const __FlashStringHelper *)menu_off_str);
 
@@ -686,7 +691,7 @@ void DisplayInfo()
     // g_display.print(F(" HUM:"));
     g_display.print(" HUM:");
     if (g_dht_humidity_err)
-      g_display.print(F("ERROR"));
+      g_display.print((const __FlashStringHelper *)error_str);
     else
       g_display.print(g_dht_humidity);
 
