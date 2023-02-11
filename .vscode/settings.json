@@ -1,9 +1,13 @@
 {
     "cSpell.words": [
         "brkval",
+        "currenttime",
         "DELTAY",
         "EEPROM",
+        "firstreading",
         "Gyver",
+        "lastreadtime",
+        "MAXTIMINGS",
         "NUMFLAKES",
         "PROGMEM",
         "setpoint",

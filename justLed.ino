@@ -23,11 +23,11 @@
 // k type thermocouple driver
 #include <max6675.h>
 // #include "DHT.h"
-#include "TinyDHT.h"
+#include "TinyDHT11.h"
 
 // ############### DHT ###############
 // Uncomment whatever type you're using!
-#define DHT_TYPE DHT11 // DHT 11
+// #define DHT_TYPE DHT11 // DHT 11
 // #define DHT_TYPE DHT22 // DHT 22  (AM2302), AM2321
 // #define DHT_TYPE DHT21   // DHT 21 (AM2301)
 
@@ -71,14 +71,17 @@ U8G2_SSD1306_128X64_NONAME_2_HW_I2C g_display(U8G2_R0, OLED_RESET);
 
 // ############### 传感器 ###############
 MAX6675 g_k_thermocouple(CLK_PIN, CS_PIN, DATA_PIN);
-DHT dht(DHT_PIN, DHT_TYPE);
+DHT dht(DHT_PIN);
 
 // ############### Delay Interval ###############
 // #define INTERVAL_LED 1000
 #define INTERVAL_K_TYPE 1000
+#define INTERVAL_DHT 2000
 
 // unsigned long g_time_led = 0;
 unsigned long g_timer_k_type;
+unsigned int g_timer_k_type_s;
+unsigned long g_timer_dht;
 
 // ############### 按钮抖动去除计算 ###############
 #define debounce 250 // time to wait in milli secs
@@ -198,7 +201,7 @@ void setup()
 
   InitializeMenu();
 
-  g_pid_setpoint = 70;
+  // g_pid_setpoint;
   // myPID.SetOutputLimits(0, 255);
   myPID.SetSampleTime(INTERVAL_K_TYPE);
   // myPID.SetMode(MANUAL);
@@ -216,6 +219,7 @@ void loop()
 {
   // refresh temp
   DelayRun(&g_timer_k_type, INTERVAL_K_TYPE, &UpdateTemp);
+  DelayRun(&g_timer_dht, INTERVAL_DHT, &UpdateDHT);
 
   // DelayRun(&g_time_key, INTERVAL_KEY_DE, DealKeyPress);
 
@@ -243,6 +247,17 @@ void DelayRun(unsigned long *time, uint32_t interval, void (*callback)())
   }
 }
 
+void UpdateDHT()
+{
+  uint8_t *tmp_data = dht.readAll();
+
+  if (!(g_dht_humidity_err = (tmp_data == nullptr)))
+  {
+    // 指针不为空
+    g_dht_humidity = tmp_data[0];
+    g_dht_temp = tmp_data[2];
+  }
+}
 void InitializeVariable()
 {
   // TODO： 读取持久化存储中的变量
@@ -506,11 +521,6 @@ void UpdateTemp()
   if (!(g_k_type_err = isnan(tmp))) // 如果没有错误，温度更新，避免 nan 传入 pid
     g_pid_input = tmp;
 
-  g_dht_temp = dht.readTemperature();
-  // 湿度
-  g_dht_humidity = dht.readHumidity();
-  g_dht_humidity_err = (g_dht_humidity == BAD_HUM || g_dht_temp == BAD_TEMP);
-
   if (!g_mute_output)
     PrintInfo(&g_timer_k_type);
 }
@@ -519,7 +529,8 @@ void UpdateTemp()
 void PrintInfo(unsigned long *time_millis)
 {
   // Serial.print(F("Time:"));
-  Serial.print(*time_millis / 1000);
+
+  Serial.print(g_timer_k_type_s = (*time_millis / 1000));
 
   Serial.print(F("-"));
   // Serial.print(F("Temp:"));
@@ -659,7 +670,7 @@ void DisplayInfo()
     // display0.print(F("s"));
     g_display.setCursor(4 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 0, FONT_X1_H * 5 + FONT_X1_GAP);
     g_display.setFont(u8g2_font_5x7_mr); // 6px hight
-    g_display.print(g_timer_k_type / 1000);
+    g_display.print(g_timer_k_type_s);
     // g_display.print(5097600);
     g_display.setCursor(5 + FONT_X1_W * 9 + FONT_X1_GAP + FONT_X1_W * 6, FONT_X1_H * 5 + FONT_X1_GAP);
     // g_display.print(100.00);
