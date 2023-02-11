@@ -54,9 +54,9 @@ U8G2_SSD1306_128X64_NONAME_2_HW_I2C g_display(U8G2_R0, OLED_RESET);
 // Arduino pin
 #define LED_PIN 2
 
-#define CLK_PIN 9  // MAX6675 SCK
+#define CLK_PIN 7  // MAX6675 SCK
 #define CS_PIN 8   // MAX6675 CS
-#define DATA_PIN 7 // MAX6675 SO
+#define DATA_PIN 9 // MAX6675 SO
 
 #define DHT_PIN 10 // DHT22
 
@@ -64,7 +64,7 @@ U8G2_SSD1306_128X64_NONAME_2_HW_I2C g_display(U8G2_R0, OLED_RESET);
 #define BTN_DOWN_PIN 3
 #define BTN_MENU_PIN 4
 #define BTN_UP_PIN 5
-#define BTN_BACK_PIN 6
+#define BTN_LOCK_PIN 6
 
 // SSR(PWM)
 #define SSR_PIN 11
@@ -85,7 +85,7 @@ unsigned long g_timer_k_type;
 unsigned long g_pre_time_down_btn;
 unsigned long g_pre_time_menu_btn;
 unsigned long g_pre_time_up_btn;
-// unsigned long g_pre_time_back_btn;
+unsigned long g_pre_time_lock_btn;
 
 // ############### PID ###############
 struct PERSIS_DATA
@@ -117,13 +117,16 @@ bool g_k_type_err = true;       // 热电偶错误状态
 volatile bool g_down_btn = false;
 volatile bool g_up_btn = false;
 volatile bool g_menu_btn = false;
-volatile bool g_back_btn = false;
+volatile bool g_lock_btn = false;
+
+bool g_mute_output = false;   // 停止输出
+bool g_close_display = false; // 关闭显示器
 
 // 显示页面
 enum DisplayState
 {
   e_DisplayInfo,
-  e_DisplayMenu
+  e_DisplayMenu,
 };
 
 // 加热模式
@@ -165,22 +168,12 @@ const char error_str[] PROGMEM = "ERR";
 CustomRender my_render(&g_display, 4);
 MenuSystem ms(my_render);
 
-BackMenuItem back_main_screen(menu_main_str, &CallBackMenu, nullptr);        // 返回主页面
-BackMenuItem save_main_screen(menu_save_str, &CallBackMenu, nullptr);        // 持久化保存
-BackMenuItem read_from_com_item(menu_read_from_com, &CallBackMenu, nullptr); // 持久化保存
-
-Menu pid_menu(menu_pid_str, nullptr);
-BackMenuItem menu_back_item(menu_back_str, &CallBackMenu, &ms);
-NumericMenuItem pid_kp_item(menu_pid_kp_str, nullptr, 0.0, 0.0, 255.0, 0.1);
+NumericMenuItem pid_kp_item(menu_pid_kp_str, nullptr, 0.0, 0.0, 255.0, 0.01);
 NumericMenuItem pid_ki_item(menu_pid_ki_str, nullptr, 0.0, 0.0, 255.0, 0.01);
 NumericMenuItem pid_kd_item(menu_pid_kd_str, nullptr, 0.0, 0.0, 255.0, 0.01);
 
 UIntMenuItem pid_setpoint_item(menu_pid_setpoint_str, nullptr, 0, 255);
-ToggleMenuItem pid_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.pid_state);
-
-Menu simple_hot_menu(menu_normal_str);
 UIntMenuItem simple_hot_diff(menu_normal_diff_str, nullptr, 0, 255);
-ToggleMenuItem simple_hot_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.heating_state);
 
 void setup()
 {
@@ -199,6 +192,7 @@ void setup()
   pinMode(BTN_DOWN_PIN, INPUT_PULLUP);
   pinMode(BTN_MENU_PIN, INPUT_PULLUP);
   pinMode(BTN_UP_PIN, INPUT_PULLUP);
+  pinMode(BTN_LOCK_PIN, INPUT_PULLUP);
 
   dht.begin();
 
@@ -206,12 +200,12 @@ void setup()
 
   g_pid_setpoint = 70;
   // myPID.SetOutputLimits(0, 255);
-  myPID.SetSampleTime(INTERVAL_K_TYPE + 500);
+  myPID.SetSampleTime(INTERVAL_K_TYPE);
   // myPID.SetMode(MANUAL);
 
   // Bit2 = 1 -> "PCIE2" enabled (PIND)
   PCICR |= B00000100;
-  PCMSK2 |= B00111000; // 3 4 5 中断
+  PCMSK2 |= B01111000; // 3 4 5 6 中断
 
   // interrupts();
 
@@ -241,7 +235,7 @@ void loop()
  */
 void DelayRun(unsigned long *time, uint32_t interval, void (*callback)())
 {
-  if (millis() > *time + interval)
+  if (millis() >= *time + interval)
   {
     // PrintInfo(*time);
     callback();
@@ -265,6 +259,18 @@ void InitializeVariable()
 
 void InitializeMenu()
 {
+
+  BackMenuItem back_main_screen(menu_main_str, &CallBackMenu, nullptr);        // 返回主页面
+  BackMenuItem save_main_screen(menu_save_str, &CallBackMenu, nullptr);        // 持久化保存
+  BackMenuItem read_from_com_item(menu_read_from_com, &CallBackMenu, nullptr); // 持久化保存
+  BackMenuItem menu_back_item(menu_back_str, &CallBackMenu, &ms);              // 通用返回
+
+  Menu pid_menu(menu_pid_str, nullptr);
+  Menu simple_hot_menu(menu_normal_str);
+
+  ToggleMenuItem simple_hot_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.heating_state);
+  ToggleMenuItem pid_on_off_item(menu_change_state_str, nullptr, menu_on_str, menu_off_str, &g_persist_data.pid_state);
+
   ms.get_root_menu().add_item(&back_main_screen);
 
   ms.get_root_menu().add_menu(&pid_menu);
@@ -306,14 +312,15 @@ void UpdateMenuValue()
 // 从 Serial 中读取 float 值
 void ReadFromCOM(double *data, char mode)
 {
-  Serial.print("Input ");
+  Serial.print("Input-");
   if (mode == 1)
     Serial.println((const __FlashStringHelper *)menu_pid_kp_str);
   else if (mode == 2)
     Serial.println((const __FlashStringHelper *)menu_pid_ki_str);
-  else
+  else if (mode == 3)
     Serial.println((const __FlashStringHelper *)menu_pid_kd_str);
-
+  else
+    Serial.println((const __FlashStringHelper *)menu_pid_setpoint_str);
   while (Serial.available() == 0)
   {
   }
@@ -336,10 +343,17 @@ void CallBackMenu(MenuComponent *menu_component)
   }
   else if (tmp == menu_read_from_com)
   {
+    g_mute_output = true;
+
+    double setpoint_temp;
     // read from com
     ReadFromCOM(&g_persist_data.Kp, 1);
     ReadFromCOM(&g_persist_data.Ki, 2);
     ReadFromCOM(&g_persist_data.Kd, 3);
+    ReadFromCOM(&setpoint_temp, 4);
+    g_persist_data.setpoint = (uint8_t)setpoint_temp;
+
+    g_mute_output = false;
   }
   else
   {
@@ -348,10 +362,6 @@ void CallBackMenu(MenuComponent *menu_component)
     g_persist_data.Kp = pid_kp_item.get_value();
     g_persist_data.Ki = pid_ki_item.get_value();
     g_persist_data.Kd = pid_kd_item.get_value();
-
-    myPID.SetTunings(g_persist_data.Kp,
-                     g_persist_data.Ki,
-                     g_persist_data.Kd);
 
     g_pid_setpoint = g_persist_data.setpoint = pid_setpoint_item.get_value();
 
@@ -363,32 +373,35 @@ void CallBackMenu(MenuComponent *menu_component)
 // 更新加热模式
 void UpdateHeatingMode()
 {
-  // PID 优先
-  if (g_persist_data.pid_state && g_k_type_err == false)
+  if (g_k_type_err == false) // 温度读取未出错
   {
-    g_heating_state = ePid;
-    bitSet(PORTD, LED_PIN);
-    myPID.SetMode(AUTOMATIC);
-    myPID.Compute();
-    analogWrite(SSR_PIN, g_pid_output);
-    return;
-  }
-  else if (g_persist_data.heating_state && g_k_type_err == false)
-  {
-    g_heating_state = eNormalHeating;
-    if (g_pid_input >= g_pid_setpoint) // 达到停止温度就停止
+    // PID 优先
+    if (g_persist_data.pid_state)
     {
-      // digitalWrite(SSR_PIN, LOW);
-      // digitalWrite(LED_PIN, LOW);
-      bitClear(PORTB, 3); // SSR
-      bitClear(PORTD, LED_PIN);
-    }
-    else if (g_pid_input < (g_persist_data.setpoint - g_persist_data.setpoint_diff)) // 低于开始温度就开始
-    {
-      // digitalWrite(SSR_PIN, HIGH);
-      // digitalWrite(LED_PIN, HIGH);
-      bitSet(PORTB, 3); // SSR
+      g_heating_state = ePid;
       bitSet(PORTD, LED_PIN);
+      myPID.SetMode(AUTOMATIC);
+      myPID.Compute();
+      analogWrite(SSR_PIN, g_pid_output);
+      return;
+    }
+    else if (g_persist_data.heating_state)
+    {
+      g_heating_state = eNormalHeating;
+      if (g_pid_input >= g_pid_setpoint) // 达到停止温度就停止
+      {
+        // digitalWrite(SSR_PIN, LOW);
+        // digitalWrite(LED_PIN, LOW);
+        bitClear(PORTB, 3); // SSR
+        bitClear(PORTD, LED_PIN);
+      }
+      else if (g_pid_input < (g_persist_data.setpoint - g_persist_data.setpoint_diff)) // 低于开始温度就开始
+      {
+        // digitalWrite(SSR_PIN, HIGH);
+        // digitalWrite(LED_PIN, HIGH);
+        bitSet(PORTB, 3); // SSR
+        bitSet(PORTD, LED_PIN);
+      }
     }
   }
   else
@@ -417,6 +430,11 @@ void UpdateDisplayContent()
     ms.display();
     return;
   }
+  else if (g_close_display)
+  {
+    g_display.clear(); // 黑屏
+    return;
+  }
   DisplayInfo();
 }
 // void UpdatePidTurns()
@@ -429,34 +447,38 @@ void UpdateDisplayContent()
 // 处理按键
 void DealKeyPress()
 {
-  if (BtnPressed(&g_menu_btn))
+  bool isMenu = g_display_state == e_DisplayMenu;
+
+  if (BtnPressed(&g_lock_btn)) // 锁屏
   {
-    if (g_display_state != e_DisplayMenu)
-    {
-      g_display_state = e_DisplayMenu;
-      // Serial.println(F("切换显示！"));
-      return;
-    }
-    ms.select();
+    g_close_display = !g_close_display;
   }
-  if (BtnPressed(&g_down_btn))
-  {
-    // Serial.println(F("down"));
-    if (g_display_state == e_DisplayMenu)
-    {
-      ms.next(true);
-      return;
-    }
-  }
-  if (BtnPressed(&g_up_btn))
-  {
-    // Serial.println(F("up"));
-    if (g_display_state == e_DisplayMenu)
+  else
+    // 通用
+    if (BtnPressed(&g_up_btn) && isMenu)
     {
       ms.prev(true);
-      return;
     }
-  }
+    else if (BtnPressed(&g_menu_btn))
+    {
+      if (isMenu)
+      {
+        ms.select();
+        return;
+      }
+      g_display_state = e_DisplayMenu;
+      // Serial.println(F("切换显示！"));
+    }
+    else if (BtnPressed(&g_down_btn))
+    {
+      if (isMenu)
+      {
+        ms.next(true);
+        return;
+      }
+      g_mute_output = !g_mute_output;
+      Serial.println('p');
+    }
 }
 
 /**
@@ -489,7 +511,8 @@ void UpdateTemp()
   g_dht_humidity = dht.readHumidity();
   g_dht_humidity_err = (g_dht_humidity == BAD_HUM || g_dht_temp == BAD_TEMP);
 
-  PrintInfo(&g_timer_k_type);
+  if (!g_mute_output)
+    PrintInfo(&g_timer_k_type);
 }
 
 // 控制台输出文字
@@ -737,5 +760,11 @@ ISR(PCINT2_vect)
   {
     g_up_btn = !g_up_btn;
     g_pre_time_up_btn = millis();
+  }
+  if (bitRead(PIND, BTN_LOCK_PIN) == 0 && millis() - g_pre_time_lock_btn > debounce)
+  {
+    g_lock_btn = !g_lock_btn;
+    // g_display_state != e_DisplayOff ? e_DisplayOff : e_DisplayInfo;
+    g_pre_time_lock_btn = millis();
   }
 }
